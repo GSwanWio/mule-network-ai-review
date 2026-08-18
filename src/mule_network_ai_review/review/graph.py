@@ -117,6 +117,8 @@ class NetworkGraphIndex:
 		}
 		adjacency_sets = {node_id: set() for node_id in nodes}
 		incident_sets = {node_id: set() for node_id in nodes}
+		predecessor_sets = {node_id: set() for node_id in nodes}
+		forward_child_sets = {node_id: set() for node_id in nodes}
 
 		for relationship in relationships.values():
 			if relationship.source_node_id not in nodes:
@@ -131,6 +133,12 @@ class NetworkGraphIndex:
 			adjacency_sets[relationship.target_node_id].add(relationship.source_node_id)
 			incident_sets[relationship.source_node_id].add(relationship.relationship_id)
 			incident_sets[relationship.target_node_id].add(relationship.relationship_id)
+			parent_node_id, child_node_id = cls._directed_endpoints(
+				relationship,
+				nodes,
+			)
+			forward_child_sets[parent_node_id].add(child_node_id)
+			predecessor_sets[child_node_id].add(parent_node_id)
 
 		identity_customer_node_ids: set[str] = set()
 		for node_id, node in nodes.items():
@@ -144,31 +152,12 @@ class NetworkGraphIndex:
 			if len(linked_customer_node_ids) > 1:
 				identity_customer_node_ids.update(linked_customer_node_ids)
 
-		distances = cls._distances(seed_node_id, adjacency_sets)
+		distances = cls._distances(seed_node_id, forward_child_sets)
 		unreachable = sorted(set(nodes) - set(distances))
 		if unreachable:
 			raise ReviewGraphError(
 				"The selected network contains "
 				f"{len(unreachable)} nodes disconnected from its seed."
-			)
-
-		predecessors: dict[str, tuple[str, ...]] = {}
-		forward_children: dict[str, tuple[str, ...]] = {}
-		for node_id, neighbours in adjacency_sets.items():
-			node_distance = distances[node_id]
-			predecessors[node_id] = tuple(
-				sorted(
-					neighbour
-					for neighbour in neighbours
-					if distances[neighbour] == node_distance - 1
-				)
-			)
-			forward_children[node_id] = tuple(
-				sorted(
-					neighbour
-					for neighbour in neighbours
-					if distances[neighbour] == node_distance + 1
-				)
 			)
 
 		return cls(
@@ -182,8 +171,14 @@ class NetworkGraphIndex:
 				for node_id, neighbours in adjacency_sets.items()
 			},
 			distances=distances,
-			predecessors=predecessors,
-			forward_children=forward_children,
+			predecessors={
+				node_id: tuple(sorted(predecessor_node_ids))
+				for node_id, predecessor_node_ids in predecessor_sets.items()
+			},
+			forward_children={
+				node_id: tuple(sorted(forward_child_node_ids))
+				for node_id, forward_child_node_ids in forward_child_sets.items()
+			},
 			incident_relationship_ids={
 				node_id: tuple(sorted(relationship_ids))
 				for node_id, relationship_ids in incident_sets.items()
@@ -219,6 +214,30 @@ class NetworkGraphIndex:
 			source_node_id=_required_text(row["source_node_id"], "source_node_id"),
 			target_node_id=_required_text(row["target_node_id"], "target_node_id"),
 			relationship_description=_optional_text(row["relationship_description"]),
+		)
+
+	@staticmethod
+	def _directed_endpoints(
+		relationship: GraphRelationship,
+		nodes: dict[str, GraphNode],
+	) -> tuple[str, str]:
+		source = nodes[relationship.source_node_id]
+		target = nodes[relationship.target_node_id]
+		if source.node_type != GraphNodeType.CUSTOMER:
+			raise ReviewGraphError(
+				f"Relationship {relationship.relationship_id} must start from a customer row."
+			)
+		if target.node_type not in {GraphNodeType.EID, GraphNodeType.COUNTERPARTY}:
+			raise ReviewGraphError(
+				f"Relationship {relationship.relationship_id} has an invalid target type."
+			)
+		if target.node_layer == source.node_layer + 1:
+			return source.node_id, target.node_id
+		if target.node_layer == source.node_layer:
+			return target.node_id, source.node_id
+		raise ReviewGraphError(
+			f"Relationship {relationship.relationship_id} cannot be placed in the "
+			"deterministic discovery sequence."
 		)
 
 	@staticmethod

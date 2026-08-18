@@ -85,15 +85,6 @@ class NodeReviewDecision(StrictModel):
 	counter_evidence: list[str] = Field(max_length=3)
 	data_quality_limitations: list[str] = Field(max_length=3)
 
-	@model_validator(mode="after")
-	def validate_pruning_confidence(self) -> NodeReviewDecision:
-		if (
-			self.decision == ReviewDecision.LEGITIMATE_PRUNE
-			and self.confidence == ReviewConfidence.LOW
-		):
-			raise ValueError("Low-confidence decisions cannot prune a branch.")
-		return self
-
 
 class AIReviewRecord(StrictModel):
 	record_version: Literal["1.0.0"] = AI_CONTRACT_VERSION

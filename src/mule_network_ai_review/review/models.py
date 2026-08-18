@@ -13,7 +13,7 @@ from mule_network_ai_review.ai.models import (
 	SubjectType,
 )
 
-REVIEW_ENGINE_VERSION = "1.0.0"
+REVIEW_ENGINE_VERSION = "2.0.0"
 
 
 class ReviewStrictModel(BaseModel):
@@ -60,7 +60,7 @@ class AnalystDecisionEvent(ReviewStrictModel):
 
 
 class CanonicalDecisionEntry(ReviewStrictModel):
-	ledger_version: Literal["1.0.0"] = REVIEW_ENGINE_VERSION
+	ledger_version: Literal["2.0.0"] = REVIEW_ENGINE_VERSION
 	canonical_key: str = Field(min_length=64, max_length=64)
 	data_snapshot_id: str = Field(min_length=1)
 	subject_token: str = Field(min_length=1)
@@ -98,7 +98,7 @@ class CanonicalDecisionEntry(ReviewStrictModel):
 
 
 class CanonicalLedgerSnapshot(ReviewStrictModel):
-	ledger_version: Literal["1.0.0"] = REVIEW_ENGINE_VERSION
+	ledger_version: Literal["2.0.0"] = REVIEW_ENGINE_VERSION
 	data_snapshot_id: str = Field(min_length=1)
 	entries: list[CanonicalDecisionEntry]
 
@@ -129,7 +129,7 @@ class ReviewNodeState(ReviewStrictModel):
 
 
 class NetworkReviewSnapshot(ReviewStrictModel):
-	engine_version: Literal["1.0.0"] = REVIEW_ENGINE_VERSION
+	engine_version: Literal["2.0.0"] = REVIEW_ENGINE_VERSION
 	data_snapshot_id: str
 	network_id: str
 	seed_node_id: str

@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 from mule_network_ai_review.ai.models import AIReviewRecord, ReviewDecision, SubjectType
+from mule_network_ai_review.ai.policy import AI_POLICY_VERSION
 from mule_network_ai_review.review.models import (
 	AnalystAction,
 	AnalystDecisionEvent,
@@ -33,6 +34,7 @@ def canonical_decision_key(
 	key_material = "|".join(
 		(
 			data_snapshot_id.strip(),
+			AI_POLICY_VERSION,
 			subject_type.value,
 			subject_token.strip(),
 		)

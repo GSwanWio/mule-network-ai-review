@@ -7,6 +7,7 @@ from hashlib import sha256
 
 import openai
 from openai import OpenAI
+from pydantic import ValidationError
 
 from mule_network_ai_review.ai.models import (
 	AIReviewRecord,
@@ -38,7 +39,7 @@ class AIClientSettings:
 		model = os.getenv("OPENAI_MODEL", "gpt-5.6").strip()
 		if not model:
 			raise AIConfigurationError("OPENAI_MODEL cannot be blank.")
-		max_output_tokens = _environment_int("OPENAI_MAX_OUTPUT_TOKENS", 1200, 256, 5000)
+		max_output_tokens = _environment_int("OPENAI_MAX_OUTPUT_TOKENS", 4000, 512, 5000)
 		timeout_seconds = _environment_float("OPENAI_TIMEOUT_SECONDS", 60.0, 5.0, 300.0)
 		max_retries = _environment_int("OPENAI_MAX_RETRIES", 0, 0, 2)
 		return cls(
@@ -97,6 +98,14 @@ class OpenAIReviewClient:
 				store=False,
 				max_output_tokens=self.settings.max_output_tokens,
 			)
+		except ValidationError as error:
+			if any(issue.get("type") == "json_invalid" for issue in error.errors()):
+				raise AIReviewError(
+					"OpenAI returned an incomplete structured decision. "
+					"Completed earlier decisions remain saved; continue the run to retry "
+					"only the unresolved subject."
+				) from error
+			raise AIReviewError("OpenAI returned a decision that failed validation.") from error
 		except openai.APIError as error:
 			status_code = getattr(error, "status_code", None)
 			request_id = getattr(error, "request_id", None)
@@ -109,6 +118,12 @@ class OpenAIReviewClient:
 
 		if response.status != "completed":
 			reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
+			if reason == "max_output_tokens":
+				raise AIReviewError(
+					"OpenAI reached the structured-output token limit. "
+					"Completed earlier decisions remain saved; continue the run to retry "
+					"only the unresolved subject."
+				)
 			suffix = f" reason={reason}" if reason else ""
 			raise AIReviewError(f"OpenAI response was not completed.{suffix}")
 		decision = response.output_parsed

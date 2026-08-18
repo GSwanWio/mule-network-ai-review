@@ -83,7 +83,33 @@ def test_shared_counterparty_has_one_canonical_key_across_networks() -> None:
 
 
 @pytest.mark.live_data
-def test_large_network_prioritizes_expansion_nodes_before_terminal_leaves() -> None:
+def test_live_relationships_follow_deterministic_discovery_direction() -> None:
+	package = _live_package()
+	network_ids = sorted(
+		package.sheet("network_summary")["network_id"].astype(str).tolist()
+	)
+	for network_id in network_ids:
+		engine = BreadthFirstReviewEngine(package, network_id)
+		for relationship in engine.graph.relationships.values():
+			source = engine.graph.nodes[relationship.source_node_id]
+			target = engine.graph.nodes[relationship.target_node_id]
+			if target.node_layer == source.node_layer + 1:
+				parent_node_id = source.node_id
+				child_node_id = target.node_id
+			else:
+				assert target.node_layer == source.node_layer
+				parent_node_id = target.node_id
+				child_node_id = source.node_id
+			assert parent_node_id in engine.graph.predecessors[child_node_id]
+			assert child_node_id in engine.graph.forward_children[parent_node_id]
+			assert (
+				engine.graph.distances[parent_node_id]
+				< engine.graph.distances[child_node_id]
+			)
+
+
+@pytest.mark.live_data
+def test_large_network_selects_only_the_shallowest_unresolved_depth() -> None:
 	package = _live_package()
 	summary = package.sheet("network_summary").copy()
 	summary["discovered_nodes"] = summary["discovered_nodes"].astype(int)
@@ -99,7 +125,12 @@ def test_large_network_prioritizes_expansion_nodes_before_terminal_leaves() -> N
 
 	assert candidates
 	assert all(node.status == ReviewNodeStatus.AWAITING_AI for node in candidates)
-	assert all(node.forward_child_count > 0 for node in candidates)
 	assert len({node.graph_depth for node in candidates}) == 1
+	minimum_unresolved_depth = min(
+		node.graph_depth
+		for node in snapshot.nodes
+		if node.reached and node.status == ReviewNodeStatus.AWAITING_AI
+	)
+	assert candidates[0].graph_depth == minimum_unresolved_depth
 	assert snapshot.pending_upstream_node_count > 0
 	assert snapshot.blocked_node_count == 0

@@ -105,11 +105,7 @@ class BreadthFirstReviewEngine:
 		status_counts = Counter(state.status for state in ordered_states)
 		unresolved_reached = any(
 			state.reached
-			and state.status
-			in {
-				ReviewNodeStatus.AWAITING_AI,
-				ReviewNodeStatus.AWAITING_ANALYST,
-			}
+			and state.status == ReviewNodeStatus.AWAITING_AI
 			for state in ordered_states
 		)
 		return NetworkReviewSnapshot(
@@ -284,7 +280,6 @@ class BreadthFirstReviewEngine:
 				states[predecessor_id].status
 				in {
 					ReviewNodeStatus.AWAITING_AI,
-					ReviewNodeStatus.AWAITING_ANALYST,
 					ReviewNodeStatus.PENDING_UPSTREAM,
 				}
 				for predecessor_id in predecessor_ids
@@ -299,7 +294,10 @@ class BreadthFirstReviewEngine:
 		if entry is None:
 			return ReviewNodeStatus.AWAITING_AI, False
 		if entry.review_state == CanonicalReviewState.AI_PROPOSED:
-			return ReviewNodeStatus.AWAITING_ANALYST, False
+			return (
+				ReviewNodeStatus.AWAITING_ANALYST,
+				entry.ai_review.decision.decision == ReviewDecision.SUSPICIOUS_KEEP,
+			)
 		if entry.effective_decision == ReviewDecision.SUSPICIOUS_KEEP:
 			return ReviewNodeStatus.CONFIRMED_KEEP, True
 		return ReviewNodeStatus.CONFIRMED_PRUNE, False
@@ -313,20 +311,14 @@ class BreadthFirstReviewEngine:
 			state
 			for state in states
 			if state.reached
-			and state.status
-			in {
-				ReviewNodeStatus.AWAITING_AI,
-				ReviewNodeStatus.AWAITING_ANALYST,
-			}
+			and state.status == ReviewNodeStatus.AWAITING_AI
 		]
 		if not unresolved:
 			return []
-		branch_unresolved = [state for state in unresolved if state.forward_child_count > 0]
-		priority_group = branch_unresolved or unresolved
-		minimum_depth = min(state.graph_depth for state in priority_group)
+		minimum_depth = min(state.graph_depth for state in unresolved)
 		candidates = [
 			state
-			for state in priority_group
+			for state in unresolved
 			if state.graph_depth == minimum_depth
 			and state.status == ReviewNodeStatus.AWAITING_AI
 		]

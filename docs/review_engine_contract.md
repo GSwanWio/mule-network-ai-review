@@ -8,9 +8,11 @@ store original customer, Emirates ID, account, or counterparty identifiers.
 
 ## Decision separation
 
-An AI response is a proposal. It cannot change network traversal by itself.
+An AI response is a provisional traversal decision. It controls whether deterministic discovery
+continues beyond that node during the bounded AI run, but it is not a final analyst-approved
+classification.
 
-A proposal becomes effective only after an analyst either:
+The decision becomes final only after an analyst either:
 
 - confirms the AI decision; or
 - overrides it with a different decision and rationale.
@@ -23,31 +25,42 @@ AI request fingerprint so stale evidence cannot be confirmed accidentally.
 Canonical decisions are keyed by:
 
 - protected subject type;
-- protected subject token; and
-- protected workbook export run ID.
+- protected subject token;
+- protected workbook export run ID; and
+- AI branch-gate policy version.
 
-The same protected subject therefore receives one AI proposal and one effective analyst-confirmed
-decision everywhere it appears in the same data snapshot. A later workbook export creates a new
+The same protected subject therefore receives one AI decision and one effective analyst-confirmed
+outcome everywhere it appears in the same data snapshot. A later workbook export creates a new
 evidence snapshot and cannot silently reuse the earlier decision.
 
 ## Traversal rules
 
-The engine calculates graph distance from the confirmed seed and evaluates reachable nodes in
-breadth-first order.
+The engine directs every relationship using the deterministic discovery layers already present in
+the protected workbook. A customer at layer `L` opens an Emirates ID or counterparty at layer
+`L + 1`; an Emirates ID or counterparty at layer `L` opens a customer at layer `L`. The engine does
+not infer branch direction from an undirected shortest path.
 
 - The confirmed seed always remains in the network.
 - Emirates ID nodes expand deterministically.
 - A customer is retained deterministically only when its Emirates ID is shared with at least one
   other customer in the same network.
 - Customers reached through counterparties and all counterparties require AI review.
-- `SUSPICIOUS_KEEP` expands the node only after analyst confirmation.
-- `LEGITIMATE_PRUNE` keeps the reviewed node visible but blocks its downstream branch only after
-  analyst confirmation.
-- A downstream node remains reachable when another confirmed path reaches it.
+- AI `SUSPICIOUS_KEEP` provisionally expands the node during the autonomous run.
+- AI `LEGITIMATE_PRUNE` keeps the reviewed node visible and provisionally blocks its downstream
+  branch.
+- Analyst confirmation preserves that outcome.
+- An analyst override recalculates traversal. An override from legitimate to suspicious opens
+  only the newly reachable branch for a continuation AI run.
+- A downstream node remains reachable when another expanding path reaches it.
 
-Nodes capable of opening additional branches are reviewed before terminal leaves. Within that
-priority group, nodes are processed breadth-first. This reduces unnecessary AI calls without
-sending the full graph to a single request.
+All unresolved nodes at the shallowest reached graph depth are processed before any deeper node.
+Nodes capable of opening additional branches are ordered first only within the same breadth-first
+depth. Each AI request receives one subject and its relevant metrics rather than the full graph.
+
+The branch-gate policy is binary. `SUSPICIOUS_KEEP` requires affirmative material risk evidence
+beyond mere membership in a mule-seeded network. `LEGITIMATE_PRUNE` stops the branch when material
+suspicious evidence is absent or outweighed. Sparse data lower confidence but do not automatically
+open a branch.
 
 ## Live-call controls
 
@@ -60,6 +73,13 @@ The wave runner:
 - disables OpenAI response storage;
 - uses structured output validation; and
 - can persist the protected canonical ledger after every successful response.
+
+The analyst interface processes requests until convergence or its explicit per-run limit of 50
+calls. Independent nodes in the same breadth-first depth may use up to three concurrent calls;
+deeper nodes cannot become eligible until the current wave is recorded. Each valid response is
+saved before the next wave, so a failed or limited run can continue without repeating completed
+decisions. The structured-output allowance is intentionally large enough for the decision
+contract, and incomplete responses fail safely without publishing a partial decision.
 
 The canonical ledger remains sensitive protected data and must be stored under an ignored local
 data path or an approved production data store.
