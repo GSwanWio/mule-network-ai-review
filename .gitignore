@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.env.*
+!.env.example
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.parquet
+data/
+uploads/
+exports/
+secrets/
+*.pem
+*.key
+.DS_Store
