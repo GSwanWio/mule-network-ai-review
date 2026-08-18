@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mule-network-ai-review"
+version = "0.1.0"
+description = "Analyst review and AI pruning for protected mule-network packages"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+	"openpyxl>=3.1,<4",
+	"pandas>=2.2,<3",
+	"streamlit>=1.40,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+	"pytest>=8.3,<9",
+	"ruff>=0.9,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mule_network_ai_review = ["contracts/*.json"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+markers = [
+	"live_data: validates a protected live-data workbook supplied outside Git",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
