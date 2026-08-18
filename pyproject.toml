@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
 	"openpyxl>=3.1,<4",
+	"openai>=2,<3",
 	"pandas>=2.2,<3",
+	"pydantic>=2.10,<3",
 	"streamlit>=1.40,<2",
 ]
 
@@ -30,6 +32,7 @@ mule_network_ai_review = ["contracts/*.json"]
 addopts = "-ra"
 markers = [
 	"live_data: validates a protected live-data workbook supplied outside Git",
+	"live_ai: performs one bounded live OpenAI API decision request",
 ]
 testpaths = ["tests"]
 
