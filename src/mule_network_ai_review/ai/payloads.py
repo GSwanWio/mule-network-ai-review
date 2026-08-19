@@ -7,7 +7,12 @@ from typing import Any
 
 import pandas as pd
 
+from mule_network_ai_review.ai.domain_policy import (
+	CounterpartyDomainError,
+	resolve_counterparty_domain,
+)
 from mule_network_ai_review.ai.models import (
+	CounterpartyRail,
 	NodeReviewRequest,
 	ReviewSubject,
 	SubjectType,
@@ -277,6 +282,7 @@ def build_node_review_request(
 	}
 
 	customer_metrics = None
+	counterparty_domain = None
 	counterparty_local_metrics = None
 	counterparty_international_metrics = None
 	if subject_type == SubjectType.CUSTOMER:
@@ -289,22 +295,37 @@ def build_node_review_request(
 		)
 		customer_metrics = _metric_map(customer_row)
 	else:
-		local_row = _single_row(
-			package.sheet("counterparty_local").loc[
-				lambda frame: (frame["network_id"].astype(str) == network_id)
-				& (frame["counterparty_token"].astype(str) == resolved_subject_token)
-			],
-			"local counterparty metric",
-		)
-		international_row = _single_row(
-			package.sheet("counterparty_intl").loc[
-				lambda frame: (frame["network_id"].astype(str) == network_id)
-				& (frame["counterparty_token"].astype(str) == resolved_subject_token)
-			],
-			"international counterparty metric",
-		)
-		counterparty_local_metrics = _metric_map(local_row)
-		counterparty_international_metrics = _metric_map(international_row)
+		try:
+			counterparty_domain = resolve_counterparty_domain(
+				relationship_descriptions=relationship_description_counts,
+				counterparty_key_type=_optional_text(node["counterparty_key_type"]),
+			)
+		except CounterpartyDomainError as error:
+			raise ReviewPayloadError(str(error)) from error
+		if counterparty_domain.rail == CounterpartyRail.LOCAL:
+			local_row = _single_row(
+				package.sheet("counterparty_local").loc[
+					lambda frame: (frame["network_id"].astype(str) == network_id)
+					& (
+						frame["counterparty_token"].astype(str)
+						== resolved_subject_token
+					)
+				],
+				"local counterparty metric",
+			)
+			counterparty_local_metrics = _metric_map(local_row)
+		elif counterparty_domain.rail == CounterpartyRail.INTERNATIONAL:
+			international_row = _single_row(
+				package.sheet("counterparty_intl").loc[
+					lambda frame: (frame["network_id"].astype(str) == network_id)
+					& (
+						frame["counterparty_token"].astype(str)
+						== resolved_subject_token
+					)
+				],
+				"international counterparty metric",
+			)
+			counterparty_international_metrics = _metric_map(international_row)
 
 	return NodeReviewRequest(
 		network_id=network_id,
@@ -322,6 +343,7 @@ def build_node_review_request(
 		),
 		network_context=network_context,
 		relationship_context=relationship_context,
+		counterparty_domain=counterparty_domain,
 		customer_metrics=customer_metrics,
 		counterparty_local_metrics=counterparty_local_metrics,
 		counterparty_international_metrics=counterparty_international_metrics,

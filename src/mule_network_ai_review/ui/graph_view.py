@@ -12,6 +12,10 @@ from mule_network_ai_review.review import (
 	ReviewNodeState,
 	ReviewNodeStatus,
 )
+from mule_network_ai_review.ui.language import (
+	build_node_display_labels,
+	decision_label,
+)
 
 MAX_RENDERED_NODES = 160
 
@@ -75,19 +79,15 @@ def _node_colour(node: ReviewNodeState) -> str:
 
 def _outcome_label(node: ReviewNodeState) -> str:
 	if node.status == ReviewNodeStatus.AWAITING_ANALYST:
-		return (
-			"AI suspicious — review pending"
-			if node.ai_decision == ReviewDecision.SUSPICIOUS_KEEP
-			else "AI legitimate — review pending"
-		)
+		return f"{decision_label(node.ai_decision)} — waiting for your review"
 	return {
-		ReviewNodeStatus.SEED_KEEP: "Seed customer",
-		ReviewNodeStatus.IDENTITY_KEEP: "Deterministic identity link",
-		ReviewNodeStatus.AWAITING_AI: "Awaiting AI",
-		ReviewNodeStatus.CONFIRMED_KEEP: "Analyst confirmed suspicious",
-		ReviewNodeStatus.CONFIRMED_PRUNE: "Analyst confirmed legitimate",
-		ReviewNodeStatus.PENDING_UPSTREAM: "Pending upstream decision",
-		ReviewNodeStatus.BLOCKED_BY_PRUNE: "Blocked by prune",
+		ReviewNodeStatus.SEED_KEEP: "Confirmed mule — starting point",
+		ReviewNodeStatus.IDENTITY_KEEP: "Identity connection — no action needed",
+		ReviewNodeStatus.AWAITING_AI: "Assessment in progress",
+		ReviewNodeStatus.CONFIRMED_KEEP: "Reviewed — needs further investigation",
+		ReviewNodeStatus.CONFIRMED_PRUNE: "Reviewed — no further investigation",
+		ReviewNodeStatus.PENDING_UPSTREAM: "Not yet reached",
+		ReviewNodeStatus.BLOCKED_BY_PRUNE: "Not followed after an earlier decision",
 	}[node.status]
 
 
@@ -151,6 +151,7 @@ def build_interactive_review_graph(
 		(states[node_id] for node_id in selected_ids),
 		key=lambda node: (node.graph_depth, node.node_type.value, node.node_token),
 	)
+	display_labels = build_node_display_labels(resolved_snapshot.nodes)
 	positions = _node_positions(selected_states)
 	active_ids = set(resolved_snapshot.active_relationship_ids)
 	pending_ids = set(resolved_snapshot.pending_relationship_ids)
@@ -193,9 +194,9 @@ def build_interactive_review_graph(
 	node_text = []
 	for node in selected_states:
 		if node.node_id == selected_node_id:
-			node_text.append("Selected")
+			node_text.append(display_labels[node.node_id])
 		elif node.is_seed_customer:
-			node_text.append("Seed")
+			node_text.append("Confirmed mule")
 		else:
 			node_text.append("")
 	traces.append(
@@ -210,20 +211,18 @@ def build_interactive_review_graph(
 			"customdata": [
 				[
 					node.node_id,
+					display_labels[node.node_id],
 					node.node_token,
-					node.node_type.value,
 					_outcome_label(node),
-					node.graph_depth,
 					"Yes" if node.analyst_review_complete else "No",
 				]
 				for node in selected_states
 			],
 			"hovertemplate": (
 				"<b>%{customdata[1]}</b><br>"
-				"Type: %{customdata[2]}<br>"
-				"Outcome: %{customdata[3]}<br>"
-				"Graph depth: %{customdata[4]}<br>"
-				"Analyst reviewed: %{customdata[5]}<extra></extra>"
+				"Status: %{customdata[3]}<br>"
+				"Checked by analyst: %{customdata[4]}<br>"
+				"Reference: %{customdata[2]}<extra></extra>"
 			),
 			"marker": {
 				"color": [_node_colour(node) for node in selected_states],

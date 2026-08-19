@@ -62,6 +62,21 @@ beyond mere membership in a mule-seeded network. `LEGITIMATE_PRUNE` stops the br
 suspicious evidence is absent or outweighed. Sparse data lower confidence but do not automatically
 open a branch.
 
+## Counterparty domain policy
+
+Counterparty rail is resolved before an AI request is created. The relationship that introduced
+the counterparty is authoritative: a local payment selects local metrics and an international
+payment selects international metrics. A SWIFT-account key resolves an otherwise beneficiary-only
+counterparty as international. An IBAN beneficiary without payment evidence remains `UNRESOLVED`
+and receives no rail-specific transaction metrics. Conflicting local and international source
+relationships fail closed.
+
+The request contains a versioned domain context and exactly one of the local or international
+metric families. It never supplies both. For an unresolved rail, it supplies neither and instructs
+the model not to infer a rail. The response is rejected if it introduces a rail that conflicts with
+the authoritative context. These stable invariants are deterministic policy controls rather than
+semantic retrieval because they must not vary with document similarity or model interpretation.
+
 ## Live-call controls
 
 Each API request contains exactly one protected customer or counterparty and its relevant metrics.

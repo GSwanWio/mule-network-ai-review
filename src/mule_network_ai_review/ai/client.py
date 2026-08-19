@@ -9,10 +9,15 @@ import openai
 from openai import OpenAI
 from pydantic import ValidationError
 
+from mule_network_ai_review.ai.domain_policy import (
+	CounterpartyDomainError,
+	validate_counterparty_decision_language,
+)
 from mule_network_ai_review.ai.models import (
 	AIReviewRecord,
 	NodeReviewDecision,
 	NodeReviewRequest,
+	SubjectType,
 )
 from mule_network_ai_review.ai.policy import AI_POLICY_VERSION, AI_SYSTEM_INSTRUCTIONS
 
@@ -135,6 +140,18 @@ class OpenAIReviewClient:
 			raise AIReviewError("OpenAI response subject token does not match the request.")
 		if decision.subject_type != request.subject.subject_type:
 			raise AIReviewError("OpenAI response subject type does not match the request.")
+		if request.subject.subject_type == SubjectType.COUNTERPARTY:
+			if request.counterparty_domain is None:
+				raise AIReviewError("Counterparty domain context is missing from the request.")
+			try:
+				validate_counterparty_decision_language(
+					request.counterparty_domain,
+					decision,
+				)
+			except CounterpartyDomainError as error:
+				raise AIReviewError(
+					"OpenAI returned a decision that conflicts with the counterparty rail."
+				) from error
 
 		usage = getattr(response, "usage", None)
 		return AIReviewRecord(

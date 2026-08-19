@@ -4,8 +4,15 @@ from mule_network_ai_review.ai.client import (
 	AIReviewError,
 	OpenAIReviewClient,
 )
+from mule_network_ai_review.ai.domain_policy import (
+	CounterpartyDomainError,
+	resolve_counterparty_domain,
+	validate_counterparty_decision_language,
+)
 from mule_network_ai_review.ai.models import (
 	AIReviewRecord,
+	CounterpartyDomainContext,
+	CounterpartyRail,
 	NodeReviewDecision,
 	NodeReviewRequest,
 	ReviewConfidence,
@@ -24,6 +31,9 @@ __all__ = [
 	"AIConfigurationError",
 	"AIReviewError",
 	"AIReviewRecord",
+	"CounterpartyDomainContext",
+	"CounterpartyDomainError",
+	"CounterpartyRail",
 	"NodeReviewDecision",
 	"NodeReviewRequest",
 	"OpenAIReviewClient",
@@ -33,5 +43,7 @@ __all__ = [
 	"ReviewSubject",
 	"SubjectType",
 	"build_node_review_request",
+	"resolve_counterparty_domain",
 	"select_review_candidate",
+	"validate_counterparty_decision_language",
 ]

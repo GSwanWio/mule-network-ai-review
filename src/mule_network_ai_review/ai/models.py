@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 AI_CONTRACT_VERSION = "1.0.0"
+COUNTERPARTY_DOMAIN_POLICY_VERSION = "mule_counterparty_rail_v1.0.0"
 
 
 class StrictModel(BaseModel):
@@ -29,6 +30,22 @@ class ReviewConfidence(StrEnum):
 	LOW = "LOW"
 
 
+class CounterpartyRail(StrEnum):
+	LOCAL = "LOCAL"
+	INTERNATIONAL = "INTERNATIONAL"
+	UNRESOLVED = "UNRESOLVED"
+
+
+class CounterpartyDomainContext(StrictModel):
+	policy_version: Literal["mule_counterparty_rail_v1.0.0"] = (
+		COUNTERPARTY_DOMAIN_POLICY_VERSION
+	)
+	rail: CounterpartyRail
+	rail_basis: str
+	supplied_metric_family: Literal["LOCAL", "INTERNATIONAL", "NONE"]
+	guidance: list[str] = Field(min_length=1)
+
+
 class ReviewSubject(StrictModel):
 	subject_token: str
 	subject_type: SubjectType
@@ -46,6 +63,7 @@ class NodeReviewRequest(StrictModel):
 	subject: ReviewSubject
 	network_context: dict[str, Any]
 	relationship_context: dict[str, Any]
+	counterparty_domain: CounterpartyDomainContext | None
 	customer_metrics: dict[str, Any] | None
 	counterparty_local_metrics: dict[str, Any] | None
 	counterparty_international_metrics: dict[str, Any] | None
@@ -53,6 +71,10 @@ class NodeReviewRequest(StrictModel):
 	@model_validator(mode="after")
 	def validate_metric_scope(self) -> NodeReviewRequest:
 		if self.subject.subject_type == SubjectType.CUSTOMER:
+			if self.counterparty_domain is not None:
+				raise ValueError(
+					"Customer review requests cannot contain counterparty domain context."
+				)
 			if self.customer_metrics is None:
 				raise ValueError("Customer review requests require customer metrics.")
 			if self.counterparty_local_metrics is not None:
@@ -64,13 +86,37 @@ class NodeReviewRequest(StrictModel):
 					"Customer review requests cannot contain international counterparty metrics."
 				)
 		if self.subject.subject_type == SubjectType.COUNTERPARTY:
+			if self.counterparty_domain is None:
+				raise ValueError(
+					"Counterparty review requests require counterparty domain context."
+				)
 			if self.customer_metrics is not None:
 				raise ValueError("Counterparty review requests cannot contain customer metrics.")
-			if (
-				self.counterparty_local_metrics is None
-				and self.counterparty_international_metrics is None
-			):
-				raise ValueError("Counterparty review requests require counterparty metrics.")
+			if self.counterparty_domain.rail == CounterpartyRail.LOCAL:
+				if self.counterparty_local_metrics is None:
+					raise ValueError("Local counterparties require local metrics.")
+				if self.counterparty_international_metrics is not None:
+					raise ValueError(
+					"Local counterparties cannot contain international metrics."
+				)
+			if self.counterparty_domain.rail == CounterpartyRail.INTERNATIONAL:
+				if self.counterparty_international_metrics is None:
+					raise ValueError(
+					"International counterparties require international metrics."
+				)
+				if self.counterparty_local_metrics is not None:
+					raise ValueError(
+					"International counterparties cannot contain local metrics."
+				)
+			if self.counterparty_domain.rail == CounterpartyRail.UNRESOLVED:
+				if self.counterparty_local_metrics is not None:
+					raise ValueError(
+					"Unresolved counterparties cannot contain local metrics."
+				)
+				if self.counterparty_international_metrics is not None:
+					raise ValueError(
+					"Unresolved counterparties cannot contain international metrics."
+				)
 		return self
 
 

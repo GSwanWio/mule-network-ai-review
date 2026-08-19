@@ -14,7 +14,6 @@ from mule_network_ai_review.ingestion import WorkbookValidationError, load_workb
 from mule_network_ai_review.review import (
 	CanonicalReviewState,
 	DecisionLedgerError,
-	GraphNodeType,
 	ReviewEngineError,
 	ReviewNodeStatus,
 )
@@ -24,9 +23,13 @@ from mule_network_ai_review.ui import (
 	AnalystReviewWorkspace,
 	ReviewWorkspaceError,
 	build_interactive_review_graph,
+	build_node_display_labels,
 	build_review_progress,
+	decision_explanation,
+	decision_label,
 	default_selected_node_id,
 	next_pending_node_id,
+	node_type_label,
 	selected_node_id_from_event,
 )
 
@@ -37,22 +40,6 @@ DEFAULT_AI_CALL_LIMIT = 25
 @st.cache_data(show_spinner=False)
 def _load_package(workbook_bytes: bytes):
 	return load_workbook_package(workbook_bytes)
-
-
-def _decision_label(decision: ReviewDecision | str) -> str:
-	resolved = ReviewDecision(decision)
-	return {
-		ReviewDecision.SUSPICIOUS_KEEP: "Suspicious — keep and continue",
-		ReviewDecision.LEGITIMATE_PRUNE: "Legitimate — prune this branch",
-	}[resolved]
-
-
-def _node_type_label(node_type: GraphNodeType) -> str:
-	return {
-		GraphNodeType.CUSTOMER: "Customer",
-		GraphNodeType.EID: "Emirates ID",
-		GraphNodeType.COUNTERPARTY: "Counterparty",
-	}[node_type]
 
 
 def _render_evidence(title: str, evidence: list[str], empty_message: str) -> None:
@@ -68,68 +55,45 @@ def _render_ai_decision(entry) -> None:
 	ai_decision = entry.ai_review.decision
 	proposal_columns = st.columns(3)
 	with proposal_columns[0], st.container(border=True):
-		st.caption("Protected subject")
+		st.caption("Reference")
 		st.code(entry.subject_token, language=None)
 	with proposal_columns[1], st.container(border=True):
-		st.caption("AI decision")
-		st.write(_decision_label(ai_decision.decision))
+		st.caption("System recommendation")
+		st.write(decision_label(ai_decision.decision))
 	with proposal_columns[2], st.container(border=True):
 		st.caption("Confidence")
 		st.write(ai_decision.confidence.value.title())
 
-	st.markdown("**AI decision reason**")
+	st.markdown("**Why this was recommended**")
 	st.write(ai_decision.decision_reason)
+	st.caption(decision_explanation(ai_decision.decision))
 	evidence_columns = st.columns(3)
 	with evidence_columns[0]:
 		_render_evidence(
-			"Strongest evidence",
+			"What supports this",
 			ai_decision.strongest_evidence,
-			"None supplied.",
+			"No supporting evidence was supplied.",
 		)
 	with evidence_columns[1]:
 		_render_evidence(
-			"Counter-evidence",
+			"What lowers concern",
 			ai_decision.counter_evidence,
-			"None supplied.",
+			"No evidence lowering concern was supplied.",
 		)
 	with evidence_columns[2]:
 		_render_evidence(
-			"Data-quality limitations",
+			"Information to keep in mind",
 			ai_decision.data_quality_limitations,
-			"None supplied.",
+			"No information limitations were supplied.",
 		)
 
 
-def _network_label(row) -> str:
+def _network_label(row, index: int, total: int) -> str:
 	return (
-		f"{row['network_id']} · {int(row['discovered_nodes']):,} nodes · "
-		f"{int(row['discovered_relationships']):,} relationships"
+		f"Network {index} of {total} · "
+		f"{int(row['discovered_nodes']):,} linked records · "
+		f"{int(row['discovered_relationships']):,} connections"
 	)
-
-
-def _review_narrative(snapshot, awaiting_analyst_count: int) -> str:
-	if not snapshot.traversal_complete:
-		return (
-			f"AI traversal has reached **{snapshot.reached_node_count:,}** of "
-			f"**{len(snapshot.nodes):,}** deterministic network nodes. "
-			f"**{snapshot.awaiting_ai_count:,}** reached nodes still require AI decisions."
-		)
-	parts = [
-		f"AI traversal stopped with **{snapshot.reached_node_count:,}** of "
-		f"**{len(snapshot.nodes):,}** deterministic network nodes reached."
-	]
-	if awaiting_analyst_count:
-		parts.append(
-			f"**{awaiting_analyst_count:,}** AI decisions remain for analyst review."
-		)
-	else:
-		parts.append("Every reached AI decision has an analyst outcome.")
-	if snapshot.blocked_node_count:
-		parts.append(
-			f"**{snapshot.blocked_node_count:,}** downstream nodes are stopped by "
-			"legitimate branch decisions."
-		)
-	return " ".join(parts)
 
 
 def _graph_selection_callback(graph_key: str, selection_key: str) -> None:
@@ -139,7 +103,7 @@ def _graph_selection_callback(graph_key: str, selection_key: str) -> None:
 
 
 st.set_page_config(
-	page_title="Mule Network AI Review",
+	page_title="Mule Network Review",
 	page_icon="🔎",
 	layout="wide",
 )
@@ -173,48 +137,61 @@ st.markdown(
 		}
 		.mule-legend i {width:9px; height:9px; border-radius:50%; display:inline-block;}
 		.mule-node-heading {color:#667085; font-size:0.85rem; margin-bottom:0.2rem;}
+		.mule-step {
+			background:#f8fafc;
+			border:1px solid #e4e7ec;
+			border-radius:14px;
+			padding:14px 16px;
+			margin:6px 0 16px;
+		}
 	</style>
 	""",
 	unsafe_allow_html=True,
 )
 
 with st.sidebar:
-	st.header("Review setup")
+	st.header("Start your review")
 	uploaded_workbook = st.file_uploader(
-		"Protected Databricks workbook",
+		"Choose the network review file",
 		type=["xlsx"],
 		accept_multiple_files=False,
+		help="Use the approved file prepared for this review.",
 	)
 	analyst_reference = st.text_input(
-		"Analyst reference",
-		help="Use an approved opaque analyst reference. Do not enter personal information.",
+		"Your analyst reference",
+		help="Enter your approved analyst reference. Do not enter personal information.",
 	)
-	ai_call_limit = st.number_input(
-		"Maximum AI assessments per run",
-		min_value=1,
-		max_value=MAX_AI_CALLS_PER_DISCOVERY_RUN,
-		value=DEFAULT_AI_CALL_LIMIT,
-		step=1,
-		help="The run stops safely at this limit and can continue without repeating decisions.",
-	)
-	if os.getenv("OPENAI_API_KEY", "").strip():
-		st.success("Real AI is configured.")
-	else:
-		st.warning("OPENAI_API_KEY is not configured.")
+	with st.expander("Assessment settings"):
+		ai_call_limit = st.number_input(
+			"Maximum connections assessed at once",
+			min_value=1,
+			max_value=MAX_AI_CALLS_PER_DISCOVERY_RUN,
+			value=DEFAULT_AI_CALL_LIMIT,
+			step=1,
+			help=(
+				"A larger number may take longer. Completed recommendations are saved."
+			),
+		)
+	if not os.getenv("OPENAI_API_KEY", "").strip():
+		st.error("The assessment service is unavailable. Contact support.")
 
-st.title("Mule Network AI Review")
-st.caption("Protected branch assessment with focused, auditable analyst validation")
+st.title("Mule Network Review")
+st.caption(
+	"Review the connections found around a confirmed mule account and confirm what needs "
+	"further investigation."
+)
 
 if uploaded_workbook is None:
-	st.info("Upload the protected workbook in Review setup to begin.")
+	st.info("Choose the network review file from the left to begin.")
 	st.stop()
 
 try:
 	package = _load_package(uploaded_workbook.getvalue())
 except WorkbookValidationError as error:
-	st.error("The workbook failed validation and was not loaded.")
-	for issue in error.issues:
-		st.write(f"- {issue}")
+	st.error("This review file could not be opened. Ask support for a new file.")
+	with st.expander("Support details"):
+		for issue in error.issues:
+			st.write(f"- {issue}")
 	st.stop()
 
 ledger_path = Path(os.getenv("MULE_NETWORK_REVIEW_LEDGER_PATH", DEFAULT_LEDGER_PATH))
@@ -241,19 +218,23 @@ network_rows = {
 network_options = list(network_rows)
 if st.session_state.get("selected_network_id") not in network_rows:
 	st.session_state["selected_network_id"] = network_options[0]
-
-status_column, selector_column = st.columns([1, 3])
-with status_column:
-	st.success("Workbook validated")
-with selector_column:
-	selected_network_id = st.selectbox(
-		"Network",
-		options=network_options,
-		format_func=lambda network_id: _network_label(network_rows[network_id]),
-		key="selected_network_id",
-		label_visibility="collapsed",
+network_labels = {
+	network_id: _network_label(
+		network_rows[network_id],
+		index,
+		len(network_options),
 	)
-selected_summary = network_rows[selected_network_id]
+	for index, network_id in enumerate(network_options, start=1)
+}
+
+st.markdown("### 1. Choose a network")
+st.caption("Each option is one mule-linked network. Select the network you want to review.")
+selected_network_id = st.selectbox(
+	"Network to review",
+	options=network_options,
+	format_func=lambda network_id: network_labels[network_id],
+	key="selected_network_id",
+)
 
 try:
 	engine = workspace.engine(selected_network_id)
@@ -268,39 +249,44 @@ flash_message = st.session_state.pop("review_flash", None)
 if flash_message:
 	st.success(flash_message)
 
-st.subheader("Network review")
-st.markdown(_review_narrative(snapshot, len(awaiting_entries)))
+recommendation_count = len(awaiting_entries) + len(confirmed_entries)
+reviewed_count = len(confirmed_entries)
+review_progress_ratio = (
+	reviewed_count / recommendation_count if recommendation_count else 1.0
+)
 
-confirmed_suspicious_count = sum(
-	entry.effective_decision == ReviewDecision.SUSPICIOUS_KEEP
-	for entry in confirmed_entries
-)
-confirmed_legitimate_count = sum(
-	entry.effective_decision == ReviewDecision.LEGITIMATE_PRUNE
-	for entry in confirmed_entries
-)
-review_columns = st.columns(5)
-review_columns[0].metric("Reached nodes", f"{snapshot.reached_node_count:,}")
-review_columns[1].metric("Awaiting AI", f"{snapshot.awaiting_ai_count:,}")
-review_columns[2].metric("Analyst review", f"{len(awaiting_entries):,}")
-review_columns[3].metric(
-	"Analyst outcomes",
-	f"{confirmed_suspicious_count + confirmed_legitimate_count:,}",
-)
-review_columns[4].metric("Blocked downstream", f"{snapshot.blocked_node_count:,}")
-
-st.markdown("### AI network review")
 if snapshot.traversal_complete:
-	st.success("AI traversal has stopped. The resulting graph is ready for analyst review.")
+	st.markdown("### 2. Check the recommendations")
+	if awaiting_entries:
+		st.write(
+			f"The system prepared **{recommendation_count:,}** recommendations. "
+			"Select each highlighted customer or counterparty, review the evidence, then "
+			"save your decision."
+		)
+		st.progress(
+			review_progress_ratio,
+			text=f"{reviewed_count:,} of {recommendation_count:,} decisions checked",
+		)
+	else:
+		st.success(
+			f"Review complete. You checked all {recommendation_count:,} recommendations."
+		)
+	if snapshot.blocked_node_count:
+		st.caption(
+			f"{snapshot.blocked_node_count:,} linked records were not followed because an "
+			"earlier connection did not need further investigation."
+		)
 else:
-	st.caption(
-		"AI reviews reached nodes breadth-first. Suspicious decisions open the next branch; "
-		"legitimate decisions stop it. The graph appears when this run stops."
+	st.markdown("### 2. Prepare the recommendations")
+	st.write(
+		"Start the assessment to check the network connections. It will stop following a "
+		"connection when the evidence does not support further investigation. Completed "
+		"recommendations are saved automatically."
 	)
 	if awaiting_entries:
-		st.warning(
-			f"{len(awaiting_entries):,} valid AI decisions are saved and "
-			f"{snapshot.awaiting_ai_count:,} reached nodes still require AI."
+		st.info(
+			f"{len(awaiting_entries):,} recommendations are already saved. Continue to "
+			"finish this network."
 		)
 
 run_disabled = (
@@ -308,30 +294,25 @@ run_disabled = (
 	or snapshot.traversal_complete
 	or snapshot.awaiting_ai_count == 0
 )
-run_label = (
-	"Continue AI network review"
-	if awaiting_entries or confirmed_entries
-	else "Run AI network review"
-)
+run_label = "Continue assessment" if awaiting_entries else "Start assessment"
 if not snapshot.traversal_complete and st.button(
 	run_label,
 	type="primary",
 	disabled=run_disabled,
-	use_container_width=True,
+	width="stretch",
 ):
 	try:
 		settings = AIClientSettings.from_environment()
-		progress = st.progress(0.0, text="Starting breadth-first AI review...")
+		progress = st.progress(0.0, text="Starting the network assessment...")
 		status_message = st.empty()
 
 		def _record_progress(record, call_number: int) -> None:
 			progress.progress(
 				min(call_number / int(ai_call_limit), 1.0),
-				text=f"Completed {call_number} AI node assessment(s).",
+				text=f"Prepared {call_number} recommendation(s).",
 			)
 			status_message.caption(
-				f"Latest protected subject: {record.subject_token} · "
-				f"{_decision_label(record.decision.decision)}"
+				f"Latest recommendation: {decision_label(record.decision.decision)}"
 			)
 
 		result = workspace.run_ai_discovery(
@@ -342,25 +323,31 @@ if not snapshot.traversal_complete and st.button(
 		)
 		if result.stop_reason == AIDiscoveryStopReason.CONVERGED:
 			message = (
-				f"AI traversal stopped after {len(result.records)} new assessment(s). "
-				"The resulting graph is ready for analyst review."
+				f"The assessment prepared {len(result.records)} new recommendation(s). "
+				"You can now review the network."
 			)
 		else:
 			message = (
-				f"AI traversal paused safely after {len(result.records)} new assessment(s). "
-				"Continue the run to reach convergence."
+				f"The assessment prepared {len(result.records)} new recommendation(s). "
+				"Select Continue assessment to finish the network."
 			)
 		st.session_state["review_flash"] = message
 		st.rerun()
 	except (AIConfigurationError, AIReviewError, ReviewWorkspaceError, ValueError) as error:
-		st.error(f"AI traversal stopped with an error: {error}")
-		st.info(
-			"Every valid decision completed before the error was saved. Continue the run to "
-			"retry only unresolved subjects."
+		st.error(
+			"The assessment paused because one recommendation could not be completed. "
+			"Your completed work is safe. Select Continue assessment to try again."
 		)
+		st.info(
+			"Only the unfinished connection will be retried. Earlier recommendations will "
+			"not run again."
+		)
+		with st.expander("Support details"):
+			st.code(str(error), language=None)
 
 if snapshot.traversal_complete:
 	progress_items = build_review_progress(snapshot)
+	display_labels = build_node_display_labels(snapshot.nodes)
 	reached_node_ids = {item.node_id for item in progress_items}
 	selection_key = f"selected_review_node_id_{selected_network_id}"
 	if st.session_state.get(selection_key) not in reached_node_ids:
@@ -368,13 +355,13 @@ if snapshot.traversal_complete:
 
 	graph_column, progress_column = st.columns([2.25, 1])
 	with progress_column:
-		st.markdown("### Review progress")
+		st.markdown("### Your review checklist")
 		reviewable_items = [item for item in progress_items if item.requires_analyst_review]
 		reviewed_count = sum(item.analyst_review_complete for item in reviewable_items)
 		review_total = len(reviewable_items)
 		progress_ratio = reviewed_count / review_total if review_total else 1.0
 		st.progress(progress_ratio)
-		st.caption(f"{reviewed_count:,} of {review_total:,} AI decisions reviewed")
+		st.caption(f"{reviewed_count:,} of {review_total:,} decisions checked")
 		with st.container(height=470, border=True, key="review_progress_panel"):
 			for item in progress_items:
 				selected = item.node_id == st.session_state[selection_key]
@@ -382,22 +369,24 @@ if snapshot.traversal_complete:
 					item.button_label,
 					key=f"node_list_{selected_network_id}_{item.node_id}",
 					type="primary" if selected else "secondary",
-					use_container_width=True,
+					width="stretch",
 					help=item.node_token,
 				):
 					st.session_state[selection_key] = item.node_id
-				st.caption(f"Layer {item.graph_depth} · {item.status_label}")
+				st.caption(item.status_label)
 
 	with graph_column:
-		st.markdown("### Decision graph")
-		st.caption("Click a node to open its decision. Hover for the full protected details.")
+		st.markdown("### Network map")
+		st.caption(
+			"Select a highlighted customer or counterparty to open its recommendation."
+		)
 		st.markdown(
 			"""
 			<div class="mule-legend">
-				<span><i style="background:#d92d20"></i>Suspicious</span>
-				<span><i style="background:#12b76a"></i>Legitimate</span>
-				<span><i style="background:#f79009"></i>Review pending</span>
-				<span><i style="background:#0891b2"></i>Identity</span>
+				<span><i style="background:#d92d20"></i>Needs investigation</span>
+				<span><i style="background:#12b76a"></i>No further action</span>
+				<span><i style="background:#f79009"></i>Waiting for your review</span>
+				<span><i style="background:#0891b2"></i>Identity connection</span>
 				<span><i style="background:#1570ef"></i>Selected</span>
 			</div>
 			""",
@@ -411,7 +400,7 @@ if snapshot.traversal_complete:
 		graph_key = f"decision_graph_{selected_network_id}"
 		st.plotly_chart(
 			graph.figure,
-			use_container_width=True,
+			width="stretch",
 			key=graph_key,
 			on_select=lambda: _graph_selection_callback(graph_key, selection_key),
 			selection_mode="points",
@@ -423,13 +412,13 @@ if snapshot.traversal_complete:
 		)
 		if graph.truncated:
 			st.caption(
-				f"Review-focused view: {graph.shown_node_count:,} of "
-				f"{graph.total_node_count:,} reached nodes shown."
+				f"Showing {graph.shown_node_count:,} of "
+				f"{graph.total_node_count:,} reviewed network records."
 			)
 		elif snapshot.blocked_node_count:
 			st.caption(
-				f"All {graph.total_node_count:,} reached nodes are shown. "
-				f"{snapshot.blocked_node_count:,} blocked descendants remain hidden."
+				f"{snapshot.blocked_node_count:,} linked records are hidden because an earlier "
+				"connection did not need further investigation."
 			)
 
 	selected_node_id = st.session_state[selection_key]
@@ -444,11 +433,12 @@ if snapshot.traversal_complete:
 
 	st.markdown("---")
 	st.markdown(
-		f"<div class='mule-node-heading'>Selected {_node_type_label(selected_node.node_type)} "
-		f"· graph depth {selected_node.graph_depth}</div>",
+		f"<div class='mule-node-heading'>Selected "
+		f"{node_type_label(selected_node.node_type)}</div>",
 		unsafe_allow_html=True,
 	)
-	st.markdown(f"### {selected_node.node_token}")
+	st.markdown(f"### {display_labels[selected_node.node_id]}")
+	st.caption(f"Reference: {selected_node.node_token}")
 
 	if selected_entry is None:
 		if selected_node.status in {
@@ -456,16 +446,15 @@ if snapshot.traversal_complete:
 			ReviewNodeStatus.IDENTITY_KEEP,
 		}:
 			st.info(
-				"This is deterministic network context and does not require an AI or analyst "
-				"decision. Select an amber-outlined customer or counterparty to review its AI "
-				"assessment."
+				"This record helps explain how the network is connected. You do not need to "
+				"make a decision here. Choose an item marked ‘Waiting for your review’."
 			)
 		else:
-			st.info("This selected node has no analyst decision available in the current state.")
+			st.info("There is no decision to make for this record right now.")
 	else:
 		_render_ai_decision(selected_entry)
 		if selected_entry.review_state == CanonicalReviewState.AI_PROPOSED:
-			st.markdown("#### Record analyst outcome")
+			st.markdown("#### What is your decision?")
 			with st.form(f"analyst_review_{selected_entry.canonical_key}"):
 				decision_options = [
 					ReviewDecision.SUSPICIOUS_KEEP,
@@ -473,30 +462,31 @@ if snapshot.traversal_complete:
 				]
 				ai_decision = selected_entry.ai_review.decision
 				analyst_decision = st.radio(
-					"Effective analyst decision",
+					"Choose one",
 					options=decision_options,
 					index=decision_options.index(ai_decision.decision),
-					format_func=_decision_label,
+					format_func=decision_label,
 					horizontal=True,
 				)
+				st.caption(decision_explanation(analyst_decision))
 				analyst_rationale = st.text_area(
-					"Analyst rationale",
-					placeholder="Explain why the evidence supports this effective decision.",
+					"Why did you choose this?",
+					placeholder="Summarise the evidence that supports your decision.",
 				)
 				analyst_attestation = st.checkbox(
-					"I reviewed the AI reason, evidence, counter-evidence, and data limitations."
+					"I have reviewed the recommendation and the supporting information."
 				)
 				submitted = st.form_submit_button(
-					"Record analyst decision",
+					"Save decision and open next",
 					type="primary",
 					disabled=not analyst_reference.strip(),
-					use_container_width=True,
+					width="stretch",
 				)
 			if submitted:
 				if not analyst_rationale.strip():
-					st.error("Enter an analyst rationale before recording the decision.")
+					st.error("Explain why you chose this decision before saving.")
 				elif not analyst_attestation:
-					st.error("Complete the evidence attestation before recording the decision.")
+					st.error("Confirm that you reviewed the supporting information.")
 				else:
 					try:
 						updated_snapshot = workspace.confirm_analyst_decision(
@@ -517,55 +507,52 @@ if snapshot.traversal_complete:
 						if next_node_id:
 							st.session_state[selection_key] = next_node_id
 						if updated_snapshot.traversal_complete:
-							message = (
-								f"Analyst decision recorded for {selected_entry.subject_token}."
-							)
+							message = "Decision saved."
 						else:
 							message = (
-								f"Analyst decision recorded for {selected_entry.subject_token}. "
-								"The override opened a branch; continue AI network review."
+								"Decision saved. This choice opened more linked records. "
+								"Continue the assessment before checking the next decision."
 							)
 						st.session_state["review_flash"] = message
 						st.rerun()
 					except (ReviewWorkspaceError, DecisionLedgerError, ValueError) as error:
-						st.error(f"The analyst decision was not recorded: {error}")
+						st.error("Your decision could not be saved. Try again or contact support.")
+						with st.expander("Support details"):
+							st.code(str(error), language=None)
 		else:
 			latest_event = selected_entry.analyst_events[-1]
 			st.success(
-				f"Reviewed ✓ · Effective outcome: "
-				f"{_decision_label(selected_entry.effective_decision)}"
+				f"Checked ✓ · Your decision: "
+				f"{decision_label(selected_entry.effective_decision)}"
 			)
-			st.markdown("**Analyst rationale**")
+			st.markdown("**Why you chose this**")
 			st.write(latest_event.rationale)
-			st.caption(
-				f"Recorded {latest_event.recorded_at_utc} · "
-				f"Action {latest_event.action.value}"
-			)
-			with st.expander("Revise this analyst outcome"):
+			with st.expander("Change this decision"):
 				revised_decision = (
 					ReviewDecision.LEGITIMATE_PRUNE
 					if selected_entry.effective_decision == ReviewDecision.SUSPICIOUS_KEEP
 					else ReviewDecision.SUSPICIOUS_KEEP
 				)
-				st.write(f"Revised outcome: **{_decision_label(revised_decision)}**")
+				st.write(f"New decision: **{decision_label(revised_decision)}**")
+				st.caption(decision_explanation(revised_decision))
 				with st.form(f"revision_{selected_entry.canonical_key}"):
 					revision_rationale = st.text_area(
-						"Revision rationale",
-						placeholder="Explain why the confirmed decision must change.",
+						"Why are you changing this decision?",
+						placeholder="Summarise the evidence that supports the change.",
 					)
 					revision_attestation = st.checkbox(
-						"I understand this changes the branch outcome and recalculates traversal."
+						"I understand that this may reveal or hide linked records."
 					)
 					revision_submitted = st.form_submit_button(
-						"Record decision revision",
+						"Save changed decision",
 						disabled=not analyst_reference.strip(),
-						use_container_width=True,
+						width="stretch",
 					)
 				if revision_submitted:
 					if not revision_rationale.strip():
-						st.error("Enter a revision rationale before recording the change.")
+						st.error("Explain why you are changing the decision.")
 					elif not revision_attestation:
-						st.error("Complete the revision attestation before recording the change.")
+						st.error("Confirm that you understand the effect of this change.")
 					else:
 						try:
 							updated_snapshot = workspace.revise_analyst_decision(
@@ -580,15 +567,11 @@ if snapshot.traversal_complete:
 								),
 							)
 							if updated_snapshot.traversal_complete:
-								message = (
-									f"Analyst revision recorded for "
-									f"{selected_entry.subject_token}."
-								)
+								message = "Changed decision saved."
 							else:
 								message = (
-									f"Analyst revision recorded for "
-									f"{selected_entry.subject_token}. "
-									"The revision opened a branch; continue AI review."
+									"Changed decision saved. This choice opened more linked "
+									"records. Continue the assessment before reviewing them."
 								)
 							st.session_state["review_flash"] = message
 							st.rerun()
@@ -597,30 +580,12 @@ if snapshot.traversal_complete:
 							DecisionLedgerError,
 							ValueError,
 						) as error:
-							st.error(f"The analyst revision was not recorded: {error}")
+							st.error(
+								"The changed decision could not be saved. Try again or "
+								"contact support."
+							)
+							with st.expander("Support details"):
+								st.code(str(error), language=None)
 
 	if not awaiting_entries and confirmed_entries:
-		st.success("All reached AI decisions have been reviewed by an analyst.")
-
-with st.expander("Protected package details"):
-	summary = package.validation_summary
-	detail_columns = st.columns(4)
-	detail_columns[0].metric("Workbook networks", f"{summary.network_count:,}")
-	detail_columns[1].metric(
-		"Selected customers",
-		f"{int(selected_summary['discovered_customers']):,}",
-	)
-	detail_columns[2].metric(
-		"Selected counterparties",
-		f"{int(selected_summary['discovered_counterparties']):,}",
-	)
-	detail_columns[3].metric(
-		"Deterministic prunes",
-		f"{int(selected_summary['pruned_branch_count']):,}",
-	)
-	st.caption(
-		"Only protected identifiers are displayed. The workbook and canonical ledger remain "
-		"sensitive and must stay in the approved environment."
-	)
-	st.caption(f"Snapshot: `{workspace.data_snapshot_id}`")
-	st.caption(f"Ledger: `{ledger_path}`")
+		st.success("You have checked every recommendation in this network.")

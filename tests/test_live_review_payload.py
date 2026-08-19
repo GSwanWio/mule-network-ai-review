@@ -3,6 +3,7 @@ import os
 import pytest
 
 from mule_network_ai_review.ai import (
+	CounterpartyRail,
 	SubjectType,
 	build_node_review_request,
 	select_review_candidate,
@@ -23,7 +24,15 @@ def test_live_workbook_builds_protected_counterparty_review_payload() -> None:
 	assert request.subject.subject_type == SubjectType.COUNTERPARTY
 	assert request.subject.subject_token == subject_token
 	assert request.customer_metrics is None
-	assert request.counterparty_local_metrics
-	assert request.counterparty_international_metrics
-	assert "counterparty_token" not in request.counterparty_local_metrics
-	assert "account_token" not in request.counterparty_international_metrics
+	assert request.counterparty_domain is not None
+	if request.counterparty_domain.rail == CounterpartyRail.LOCAL:
+		assert request.counterparty_local_metrics
+		assert request.counterparty_international_metrics is None
+		assert "counterparty_token" not in request.counterparty_local_metrics
+	elif request.counterparty_domain.rail == CounterpartyRail.INTERNATIONAL:
+		assert request.counterparty_local_metrics is None
+		assert request.counterparty_international_metrics
+		assert "account_token" not in request.counterparty_international_metrics
+	else:
+		assert request.counterparty_local_metrics is None
+		assert request.counterparty_international_metrics is None

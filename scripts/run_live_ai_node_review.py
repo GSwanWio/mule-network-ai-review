@@ -50,6 +50,16 @@ def main() -> int:
 				"network_id": request.network_id,
 				"subject_token": request.subject.subject_token,
 				"subject_type": request.subject.subject_type.value,
+				"counterparty_rail": (
+					request.counterparty_domain.rail.value
+					if request.counterparty_domain
+					else None
+				),
+				"counterparty_rail_basis": (
+					request.counterparty_domain.rail_basis
+					if request.counterparty_domain
+					else None
+				),
 				"customer_metric_count": len(request.customer_metrics or {}),
 				"local_counterparty_metric_count": len(
 					request.counterparty_local_metrics or {}

@@ -9,12 +9,14 @@ from mule_network_ai_review.review import (
 	ReviewNodeState,
 	ReviewNodeStatus,
 )
+from mule_network_ai_review.ui.language import build_node_display_labels
 
 
 @dataclass(frozen=True)
 class ReviewProgressItem:
 	node_id: str
 	node_token: str
+	display_label: str
 	node_type: GraphNodeType
 	graph_depth: int
 	status_label: str
@@ -30,16 +32,8 @@ class ReviewProgressItem:
 		return f"{self.node_token[:21]}…"
 
 	@property
-	def type_label(self) -> str:
-		return {
-			GraphNodeType.CUSTOMER: "Customer",
-			GraphNodeType.EID: "Emirates ID",
-			GraphNodeType.COUNTERPARTY: "Counterparty",
-		}[self.node_type]
-
-	@property
 	def button_label(self) -> str:
-		return f"{self.icon} {self.type_label} · {self.short_token}"
+		return f"{self.icon} {self.display_label}"
 
 
 def _progress_status(node: ReviewNodeState) -> tuple[str, str]:
@@ -49,18 +43,19 @@ def _progress_status(node: ReviewNodeState) -> tuple[str, str]:
 	}:
 		return "Reviewed", "✅"
 	if node.status == ReviewNodeStatus.AWAITING_ANALYST:
-		return "Analyst review needed", "○"
+		return "Waiting for your review", "○"
 	if node.status == ReviewNodeStatus.AWAITING_AI:
-		return "Awaiting AI", "⋯"
+		return "Assessment in progress", "⋯"
 	if node.status == ReviewNodeStatus.SEED_KEEP:
-		return "Seed customer", "◆"
+		return "Starting point", "◆"
 	if node.status == ReviewNodeStatus.IDENTITY_KEEP:
-		return "Deterministic identity link", "◇"
-	return "Pending upstream", "–"
+		return "Identity connection — no action needed", "◇"
+	return "Not yet reached", "–"
 
 
 def build_review_progress(snapshot: NetworkReviewSnapshot) -> tuple[ReviewProgressItem, ...]:
 	items = []
+	display_labels = build_node_display_labels(snapshot.nodes)
 	for node in snapshot.nodes:
 		if not node.reached:
 			continue
@@ -69,6 +64,7 @@ def build_review_progress(snapshot: NetworkReviewSnapshot) -> tuple[ReviewProgre
 			ReviewProgressItem(
 				node_id=node.node_id,
 				node_token=node.node_token,
+				display_label=display_labels[node.node_id],
 				node_type=node.node_type,
 				graph_depth=node.graph_depth,
 				status_label=status_label,
@@ -82,7 +78,7 @@ def build_review_progress(snapshot: NetworkReviewSnapshot) -> tuple[ReviewProgre
 		sorted(
 			items,
 			key=lambda item: (
-				0 if item.status_label == "Analyst review needed" else 1,
+				0 if item.status_label == "Waiting for your review" else 1,
 				item.graph_depth,
 				item.node_type.value,
 				item.node_token,
@@ -112,7 +108,7 @@ def next_pending_node_id(
 	pending_ids = [
 		item.node_id
 		for item in build_review_progress(snapshot)
-		if item.status_label == "Analyst review needed"
+		if item.status_label == "Waiting for your review"
 		and item.node_id != current_node_id
 	]
 	return pending_ids[0] if pending_ids else None

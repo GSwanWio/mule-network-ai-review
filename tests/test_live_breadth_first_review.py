@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from mule_network_ai_review.ai import SubjectType
+from mule_network_ai_review.ai import CounterpartyRail, SubjectType
 from mule_network_ai_review.ingestion import load_workbook_package
 from mule_network_ai_review.review import (
 	BreadthFirstReviewEngine,
@@ -39,8 +39,16 @@ def test_live_workbook_produces_protected_breadth_first_review_plan() -> None:
 	assert len(requests) == 1
 	assert requests[0].subject.subject_type == SubjectType.COUNTERPARTY
 	assert requests[0].subject.subject_token.startswith("CP_")
-	assert requests[0].counterparty_local_metrics
-	assert requests[0].counterparty_international_metrics
+	assert requests[0].counterparty_domain is not None
+	if requests[0].counterparty_domain.rail == CounterpartyRail.LOCAL:
+		assert requests[0].counterparty_local_metrics
+		assert requests[0].counterparty_international_metrics is None
+	elif requests[0].counterparty_domain.rail == CounterpartyRail.INTERNATIONAL:
+		assert requests[0].counterparty_local_metrics is None
+		assert requests[0].counterparty_international_metrics
+	else:
+		assert requests[0].counterparty_local_metrics is None
+		assert requests[0].counterparty_international_metrics is None
 	assert not any(
 		node.status == ReviewNodeStatus.AWAITING_ANALYST for node in snapshot.nodes
 	)

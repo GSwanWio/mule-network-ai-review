@@ -8,17 +8,19 @@ node assessments, and the protected canonical ledger already established by the 
 
 ## Review sequence
 
-1. The analyst uploads the protected Databricks workbook.
+1. The analyst chooses the approved network-review file.
 2. The application validates the complete workbook contract before displaying any network.
-3. The analyst selects a network and starts a bounded AI network-review run.
+3. The analyst uses an explicitly labelled network selector and starts the assessment.
 4. AI assesses reached nodes breadth-first, expands suspicious branches, and prunes legitimate
    branches without waiting for analyst input between nodes.
 5. The run stops at convergence or at its explicit API-call safety limit. A limited run can be
    continued without repeating canonical decisions.
 6. After convergence, the application displays the resulting graph and every AI decision.
 7. The analyst selects a reached node directly from the graph or review-progress panel.
-8. The analyst reviews each reason, evidence set, counter-evidence set, and data limitation.
-9. The analyst confirms or overrides every AI decision and supplies an audit rationale.
+8. The analyst reviews why each recommendation was made, what supports it, what lowers concern,
+   and what information limitations remain.
+9. The analyst chooses either `Needs further investigation` or
+   `No further investigation needed` and supplies an audit rationale.
 10. An override that reopens a branch returns the network to AI traversal for only the newly
    reachable nodes. The updated graph is presented again after that continuation stops.
 
@@ -35,8 +37,16 @@ node assessments, and the protected canonical ledger already established by the 
 - Analyst controls and the resulting graph remain unavailable until AI traversal stops.
 - The graph is the primary node selector; the interface does not use a separate AI-decision
   dropdown.
-- A scrollable reached-node panel shows deterministic context, pending analyst decisions, and
-  completed analyst decisions. Completed review items display a green check.
+- A scrollable checklist uses numbered, analyst-friendly record labels rather than exposing raw
+  protected tokens as the primary label. Completed review items display a green check.
+- Backend terms including traversal, convergence, deterministic expansion, graph depth, prune,
+  and branch gate are not shown in the normal analyst journey.
+- Internal decisions are translated consistently: `SUSPICIOUS_KEEP` is shown as
+  `Needs further investigation`; `LEGITIMATE_PRUNE` is shown as
+  `No further investigation needed`.
+- Workbook validation, API configuration, ledger paths, snapshots, and raw network identifiers are
+  hidden from the normal review journey. Technical error detail is available only in a collapsed
+  support section.
 - Recording a decision keeps the selected network stable and advances to the next pending node
   when one remains.
 - The analyst must provide an approved opaque reference, rationale, and evidence attestation.

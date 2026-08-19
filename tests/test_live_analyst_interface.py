@@ -2,12 +2,14 @@ import os
 
 import pytest
 
+from mule_network_ai_review.ai import ReviewDecision
 from mule_network_ai_review.ingestion import load_workbook_package
 from mule_network_ai_review.review import select_default_review_network
 from mule_network_ai_review.ui import (
 	AnalystReviewWorkspace,
 	build_interactive_review_graph,
 	build_review_progress,
+	decision_label,
 )
 
 
@@ -44,6 +46,16 @@ def test_live_workspace_prepares_review_without_writing_a_ledger(tmp_path) -> No
 	assert len(node_trace["customdata"]) == snapshot.reached_node_count
 	assert sum(bool(label) for label in node_trace["text"]) == 1
 	assert all(item.node_token for item in progress)
+	assert all(item.display_label for item in progress)
+	assert all("deterministic" not in item.status_label.lower() for item in progress)
+
+
+def test_decisions_use_plain_analyst_language() -> None:
+	assert decision_label(ReviewDecision.SUSPICIOUS_KEEP) == "Needs further investigation"
+	assert (
+		decision_label(ReviewDecision.LEGITIMATE_PRUNE)
+		== "No further investigation needed"
+	)
 
 
 @pytest.mark.live_data
