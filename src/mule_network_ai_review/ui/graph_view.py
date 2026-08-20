@@ -68,7 +68,7 @@ def _node_colour(node: ReviewNodeState) -> str:
 		)
 	return {
 		ReviewNodeStatus.SEED_KEEP: "#d92d20",
-		ReviewNodeStatus.IDENTITY_KEEP: "#0891b2",
+		ReviewNodeStatus.IDENTITY_KEEP: "#d92d20",
 		ReviewNodeStatus.AWAITING_AI: "#6941c6",
 		ReviewNodeStatus.CONFIRMED_KEEP: "#d92d20",
 		ReviewNodeStatus.CONFIRMED_PRUNE: "#12b76a",
@@ -82,7 +82,7 @@ def _outcome_label(node: ReviewNodeState) -> str:
 		return f"{decision_label(node.ai_decision)} — waiting for your review"
 	return {
 		ReviewNodeStatus.SEED_KEEP: "Confirmed mule — starting point",
-		ReviewNodeStatus.IDENTITY_KEEP: "Identity connection — no action needed",
+		ReviewNodeStatus.IDENTITY_KEEP: "Confirmed mule — shared Emirates ID",
 		ReviewNodeStatus.AWAITING_AI: "Assessment in progress",
 		ReviewNodeStatus.CONFIRMED_KEEP: "Reviewed — needs further investigation",
 		ReviewNodeStatus.CONFIRMED_PRUNE: "Reviewed — no further investigation",
@@ -108,7 +108,7 @@ def _edge_style(
 	target: ReviewNodeState,
 ) -> tuple[str, str, float]:
 	if source.node_type == GraphNodeType.EID or target.node_type == GraphNodeType.EID:
-		return "#0891b2", "dot", 0.55
+		return "#d92d20", "solid", 0.58
 	if relationship_id in snapshot.pruned_relationship_ids:
 		return "#12b76a", "dash", 0.55
 	if relationship_id in snapshot.pending_relationship_ids:

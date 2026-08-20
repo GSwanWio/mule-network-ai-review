@@ -4,7 +4,11 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from mule_network_ai_review.ai import ReviewDecision
-from mule_network_ai_review.review import GraphNodeType, ReviewNodeState
+from mule_network_ai_review.review import (
+	GraphNodeType,
+	ReviewNodeState,
+	ReviewNodeStatus,
+)
 
 
 def decision_label(decision: ReviewDecision | str) -> str:
@@ -30,7 +34,7 @@ def decision_explanation(decision: ReviewDecision | str) -> str:
 def node_type_label(node_type: GraphNodeType) -> str:
 	return {
 		GraphNodeType.CUSTOMER: "Customer",
-		GraphNodeType.EID: "Identity link",
+		GraphNodeType.EID: "Shared identity",
 		GraphNodeType.COUNTERPARTY: "Counterparty",
 	}[node_type]
 
@@ -53,7 +57,17 @@ def build_node_display_labels(
 			labels[node.node_id] = "Confirmed mule"
 			continue
 		counters[node.node_type] += 1
-		labels[node.node_id] = (
-			f"{node_type_label(node.node_type)} {counters[node.node_type]}"
-		)
+		if node.status == ReviewNodeStatus.IDENTITY_KEEP:
+			identity_label = (
+				"Confirmed mule customer"
+				if node.node_type == GraphNodeType.CUSTOMER
+				else "Confirmed mule identity"
+			)
+			labels[node.node_id] = (
+				f"{identity_label} {counters[node.node_type]}"
+			)
+		else:
+			labels[node.node_id] = (
+				f"{node_type_label(node.node_type)} {counters[node.node_type]}"
+			)
 	return labels

@@ -378,15 +378,15 @@ if snapshot.traversal_complete:
 	with graph_column:
 		st.markdown("### Network map")
 		st.caption(
-			"Select a highlighted customer or counterparty to open its recommendation."
+			"Select any record to see its status. Records outlined in orange need your "
+			"decision."
 		)
 		st.markdown(
 			"""
 			<div class="mule-legend">
-				<span><i style="background:#d92d20"></i>Needs investigation</span>
-				<span><i style="background:#12b76a"></i>No further action</span>
+				<span><i style="background:#d92d20"></i>Appears suspicious</span>
+				<span><i style="background:#12b76a"></i>Appears legitimate</span>
 				<span><i style="background:#f79009"></i>Waiting for your review</span>
-				<span><i style="background:#0891b2"></i>Identity connection</span>
 				<span><i style="background:#1570ef"></i>Selected</span>
 			</div>
 			""",
@@ -441,13 +441,16 @@ if snapshot.traversal_complete:
 	st.caption(f"Reference: {selected_node.node_token}")
 
 	if selected_entry is None:
-		if selected_node.status in {
-			ReviewNodeStatus.SEED_KEEP,
-			ReviewNodeStatus.IDENTITY_KEEP,
-		}:
+		if selected_node.status == ReviewNodeStatus.SEED_KEEP:
 			st.info(
-				"This record helps explain how the network is connected. You do not need to "
-				"make a decision here. Choose an item marked ‘Waiting for your review’."
+				"This is the confirmed mule that started the network. It remains in the "
+				"network automatically and does not need a separate recommendation."
+			)
+		elif selected_node.status == ReviewNodeStatus.IDENTITY_KEEP:
+			st.info(
+				"This record is on a confirmed mule identity path. Customers sharing the "
+				"confirmed mule’s Emirates ID are treated as confirmed mules, remain in "
+				"the network automatically, and do not need a separate recommendation."
 			)
 		else:
 			st.info("There is no decision to make for this record right now.")

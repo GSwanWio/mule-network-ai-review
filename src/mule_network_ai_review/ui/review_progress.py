@@ -47,9 +47,9 @@ def _progress_status(node: ReviewNodeState) -> tuple[str, str]:
 	if node.status == ReviewNodeStatus.AWAITING_AI:
 		return "Assessment in progress", "⋯"
 	if node.status == ReviewNodeStatus.SEED_KEEP:
-		return "Starting point", "◆"
+		return "Confirmed mule — starting point", "◆"
 	if node.status == ReviewNodeStatus.IDENTITY_KEEP:
-		return "Identity connection — no action needed", "◇"
+		return "Confirmed mule — shared Emirates ID", "◆"
 	return "Not yet reached", "–"
 
 

@@ -40,11 +40,11 @@ the protected workbook. A customer at layer `L` opens an Emirates ID or counterp
 `L + 1`; an Emirates ID or counterparty at layer `L` opens a customer at layer `L`. The engine does
 not infer branch direction from an undirected shortest path.
 
-- The confirmed seed always remains in the network.
-- Emirates ID nodes expand deterministically.
-- A customer is retained deterministically only when its Emirates ID is shared with at least one
-  other customer in the same network.
-- Customers reached through counterparties and all counterparties require AI review.
+- The confirmed seed always remains in the network as a confirmed mule.
+- An Emirates ID path reached from a confirmed mule expands deterministically.
+- Every customer sharing that Emirates ID is classified as a confirmed mule, remains in the
+  network, and expands deterministically without AI or analyst review.
+- Customers reached only through counterparties and all counterparties require AI review.
 - AI `SUSPICIOUS_KEEP` provisionally expands the node during the autonomous run.
 - AI `LEGITIMATE_PRUNE` keeps the reviewed node visible and provisionally blocks its downstream
   branch.

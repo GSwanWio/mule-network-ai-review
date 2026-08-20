@@ -52,6 +52,16 @@ def test_live_workbook_produces_protected_breadth_first_review_plan() -> None:
 	assert not any(
 		node.status == ReviewNodeStatus.AWAITING_ANALYST for node in snapshot.nodes
 	)
+	identity_mule_nodes = [
+		node
+		for node in snapshot.nodes
+		if node.status == ReviewNodeStatus.IDENTITY_KEEP
+	]
+	assert identity_mule_nodes
+	assert all(node.deterministic_identity_keep for node in identity_mule_nodes)
+	assert all(node.expands for node in identity_mule_nodes)
+	assert all(not node.requires_ai_review for node in identity_mule_nodes)
+	assert all(not node.requires_analyst_review for node in identity_mule_nodes)
 
 
 @pytest.mark.live_data

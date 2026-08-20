@@ -4,10 +4,14 @@ import pytest
 
 from mule_network_ai_review.ai import ReviewDecision
 from mule_network_ai_review.ingestion import load_workbook_package
-from mule_network_ai_review.review import select_default_review_network
+from mule_network_ai_review.review import (
+	ReviewNodeStatus,
+	select_default_review_network,
+)
 from mule_network_ai_review.ui import (
 	AnalystReviewWorkspace,
 	build_interactive_review_graph,
+	build_node_display_labels,
 	build_review_progress,
 	decision_label,
 )
@@ -42,12 +46,38 @@ def test_live_workspace_prepares_review_without_writing_a_ledger(tmp_path) -> No
 	assert rendered.figure["layout"]["dragmode"] == "pan"
 	assert set(rendered.node_ids) == {item.node_id for item in progress}
 	node_trace = rendered.figure["data"][-1]
+	rendered_colours = {
+		custom_data[0]: colour
+		for custom_data, colour in zip(
+			node_trace["customdata"],
+			node_trace["marker"]["color"],
+			strict=True,
+		)
+	}
+	progress_by_node_id = {item.node_id: item for item in progress}
+	display_labels = build_node_display_labels(snapshot.nodes)
+	identity_nodes = [
+		node
+		for node in snapshot.nodes
+		if node.status == ReviewNodeStatus.IDENTITY_KEEP
+	]
 	assert node_trace["mode"] == "markers+text"
 	assert len(node_trace["customdata"]) == snapshot.reached_node_count
 	assert sum(bool(label) for label in node_trace["text"]) == 1
 	assert all(item.node_token for item in progress)
 	assert all(item.display_label for item in progress)
 	assert all("deterministic" not in item.status_label.lower() for item in progress)
+	assert identity_nodes
+	assert all(rendered_colours[node.node_id] == "#d92d20" for node in identity_nodes)
+	assert all(
+		progress_by_node_id[node.node_id].status_label
+		== "Confirmed mule — shared Emirates ID"
+		for node in identity_nodes
+	)
+	assert all(
+		display_labels[node.node_id].startswith("Confirmed mule")
+		for node in identity_nodes
+	)
 
 
 def test_decisions_use_plain_analyst_language() -> None:

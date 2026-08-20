@@ -39,6 +39,9 @@ node assessments, and the protected canonical ledger already established by the 
   dropdown.
 - A scrollable checklist uses numbered, analyst-friendly record labels rather than exposing raw
   protected tokens as the primary label. Completed review items display a green check.
+- The confirmed seed and every customer reached through its shared Emirates ID are presented as
+  confirmed mules. They remain in the network automatically and never appear as neutral identity
+  records requiring an AI or analyst decision.
 - Backend terms including traversal, convergence, deterministic expansion, graph depth, prune,
   and branch gate are not shown in the normal analyst journey.
 - Internal decisions are translated consistently: `SUSPICIOUS_KEEP` is shown as
@@ -69,9 +72,11 @@ re-identification mapping must never enter the repository, interface, ledger, or
 ## Graph presentation
 
 The graph is generated locally without external network or visualization services. It supports
-click selection, hover detail, pan, and zoom. Suspicious paths are red, legitimate pruned paths are
-green, identity links are teal, and unresolved states remain neutral or amber. Only the seed and
-selected node carry persistent labels so dense networks remain readable. The resulting graph
-contains reached nodes and legitimate boundary nodes only. Downstream nodes blocked by a legitimate
-decision remain counted for audit but are intentionally hidden from the rendered result. Large
-reached networks use an explicitly labelled review-focused view.
+click selection, hover detail, pan, and zoom. Confirmed mules and records that appear suspicious
+are red, records that appear legitimate are green, and records waiting for analyst review are
+outlined in amber. Shared Emirates ID paths are red because they identify confirmed mule customers,
+not neutral connections. Only the seed and selected node carry persistent labels so dense networks
+remain readable. The resulting graph contains reached nodes and legitimate boundary nodes only.
+Downstream nodes blocked by a legitimate decision remain counted for audit but are intentionally
+hidden from the rendered result. Large reached networks use an explicitly labelled review-focused
+view.
