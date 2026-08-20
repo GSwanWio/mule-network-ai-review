@@ -25,6 +25,7 @@ from mule_network_ai_review.ui import (
 	NodeDetails,
 	NodeDetailsError,
 	ReviewWorkspaceError,
+	analyst_visible_node_ids,
 	build_interactive_review_graph,
 	build_node_details,
 	build_node_display_labels,
@@ -105,6 +106,18 @@ def _render_detail_grid(items, metric: bool = False) -> None:
 					st.write(item.value)
 
 
+def _render_comparisons(comparisons) -> None:
+	for offset in range(0, len(comparisons), 3):
+		row_items = comparisons[offset : offset + 3]
+		columns = st.columns(len(row_items))
+		for column, item in zip(columns, row_items, strict=True):
+			with column, st.container(border=True):
+				st.caption(item.label)
+				st.write(f"**Selected customer:** {item.customer_value}")
+				st.write(f"**Confirmed seed:** {item.seed_value}")
+				st.caption(item.difference)
+
+
 def _render_node_details(details: NodeDetails) -> None:
 	with st.container(border=True):
 		st.markdown("#### Record overview")
@@ -120,15 +133,26 @@ def _render_node_details(details: NodeDetails) -> None:
 				"This comparison adds context only. The selected customer's own activity "
 				"remains the main evidence."
 			)
-			for offset in range(0, len(details.comparisons), 3):
-				row_items = details.comparisons[offset : offset + 3]
-				columns = st.columns(len(row_items))
-				for column, item in zip(columns, row_items, strict=True):
-					with column, st.container(border=True):
-						st.caption(item.label)
-						st.write(f"**Selected customer:** {item.customer_value}")
-						st.write(f"**Confirmed seed:** {item.seed_value}")
-						st.caption(item.difference)
+			_render_comparisons(details.comparisons)
+		if details.connected_customers:
+			st.markdown("**Confirmed mule customers connected to this Emirates ID**")
+			st.caption(
+				"Each connected customer remains classified as a confirmed mule and is "
+				"shown with its own profile and activity. Non-seed customers also include "
+				"a comparison with the confirmed seed mule."
+			)
+			for customer in details.connected_customers:
+				with st.container(border=True):
+					st.markdown(f"##### {customer.title}")
+					st.caption(f"Reference: {customer.customer_token}")
+					st.write(customer.description)
+					_render_detail_grid(customer.facts)
+					if customer.indicators:
+						st.markdown("**Key activity indicators**")
+						_render_detail_grid(customer.indicators, metric=True)
+					if customer.comparisons:
+						st.markdown("**Compared with the confirmed seed mule**")
+						_render_comparisons(customer.comparisons)
 
 
 def _network_label(row, index: int, total: int) -> str:
@@ -414,8 +438,12 @@ if not snapshot.traversal_complete and st.button(
 			st.code(str(error), language=None)
 
 if snapshot.traversal_complete:
-	progress_items = build_review_progress(snapshot)
-	display_labels = build_node_display_labels(snapshot.nodes)
+	visible_node_ids = analyst_visible_node_ids(engine, snapshot)
+	visible_nodes = [
+		node for node in snapshot.nodes if node.node_id in visible_node_ids
+	]
+	progress_items = build_review_progress(snapshot, visible_node_ids)
+	display_labels = build_node_display_labels(visible_nodes)
 	reached_node_ids = {item.node_id for item in progress_items}
 	selection_key = f"selected_review_node_id_{selected_network_id}"
 	if st.session_state.get(selection_key) not in reached_node_ids:

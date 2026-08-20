@@ -43,6 +43,16 @@ class NodeMetricComparison:
 
 
 @dataclass(frozen=True)
+class ConnectedCustomerSummary:
+	title: str
+	customer_token: str
+	description: str
+	facts: tuple[NodeDetailItem, ...]
+	indicators: tuple[NodeDetailItem, ...]
+	comparisons: tuple[NodeMetricComparison, ...]
+
+
+@dataclass(frozen=True)
 class NodeDetails:
 	record_type: str
 	description: str
@@ -50,6 +60,7 @@ class NodeDetails:
 	indicators: tuple[NodeDetailItem, ...]
 	comparisons: tuple[NodeMetricComparison, ...] = ()
 	metric_family: str | None = None
+	connected_customers: tuple[ConnectedCustomerSummary, ...] = ()
 
 
 CUSTOMER_COMPARISON_PRESENTATION = {
@@ -250,26 +261,27 @@ def _incident_relationships(
 	].copy()
 
 
-def _customer_details(
+def _customer_details_for_token(
 	package: WorkbookPackage,
 	network_id: str,
-	node: ReviewNodeState,
+	customer_token: str,
+	status: ReviewNodeStatus,
 ) -> NodeDetails:
 	metrics = package.sheet("customer_metrics")
 	row = _single_row(
 		metrics.loc[
 			(metrics["network_id"].astype(str) == network_id)
-			& (metrics["customer_token"].astype(str) == node.node_token)
+			& (metrics["customer_token"].astype(str) == customer_token)
 		],
 		"customer metric",
 	)
-	confirmed_mule = node.status in {
+	confirmed_mule = status in {
 		ReviewNodeStatus.SEED_KEEP,
 		ReviewNodeStatus.IDENTITY_KEEP,
 	}
-	if node.status == ReviewNodeStatus.SEED_KEEP:
+	if status == ReviewNodeStatus.SEED_KEEP:
 		description = "Confirmed mule that started this network."
-	elif node.status == ReviewNodeStatus.IDENTITY_KEEP:
+	elif status == ReviewNodeStatus.IDENTITY_KEEP:
 		description = (
 			"Confirmed mule because this customer shares an Emirates ID with a "
 			"confirmed mule."
@@ -333,9 +345,22 @@ def _customer_details(
 		comparisons=_customer_comparisons(
 			package,
 			network_id,
-			node.node_token,
+			customer_token,
 		),
 		metric_family="CUSTOMER",
+	)
+
+
+def _customer_details(
+	package: WorkbookPackage,
+	network_id: str,
+	node: ReviewNodeState,
+) -> NodeDetails:
+	return _customer_details_for_token(
+		package,
+		network_id,
+		node.node_token,
+		node.status,
 	)
 
 
@@ -446,7 +471,6 @@ def _counterparty_details(
 def _identity_details(
 	package: WorkbookPackage,
 	network_id: str,
-	node: ReviewNodeState,
 	incident: pd.DataFrame,
 ) -> NodeDetails:
 	nodes = package.sheet("nodes")
@@ -457,24 +481,84 @@ def _identity_details(
 	connected_customers = network_nodes.loc[
 		(network_nodes["node_id"].astype(str).isin(connected_node_ids))
 		& (network_nodes["node_type"].astype(str) == GraphNodeType.CUSTOMER.value)
-	]
+	].copy()
+	connected_customers = connected_customers.sort_values(
+		by=["is_seed_customer", "customer_token"],
+		ascending=[False, True],
+		kind="stable",
+	)
+	if connected_customers.empty:
+		raise NodeDetailsError(
+			"This Emirates ID has no connected customer in the selected network."
+		)
+
+	customer_summaries = []
+	linked_customer_number = 0
+	for _, customer_row in connected_customers.iterrows():
+		customer_token = _text(customer_row.get("customer_token"))
+		if customer_token is None:
+			raise NodeDetailsError(
+				"A customer connected to the shared Emirates ID has no protected reference."
+			)
+		is_seed_customer = bool(customer_row.get("is_seed_customer"))
+		if is_seed_customer:
+			title = "Confirmed seed mule"
+			status = ReviewNodeStatus.SEED_KEEP
+		else:
+			linked_customer_number += 1
+			title = f"Confirmed mule customer {linked_customer_number}"
+			status = ReviewNodeStatus.IDENTITY_KEEP
+		customer_details = _customer_details_for_token(
+			package,
+			network_id,
+			customer_token,
+			status,
+		)
+		customer_summaries.append(
+			ConnectedCustomerSummary(
+				title=title,
+				customer_token=customer_token,
+				description=customer_details.description,
+				facts=customer_details.facts,
+				indicators=customer_details.indicators,
+				comparisons=customer_details.comparisons,
+			)
+		)
+
+	includes_seed = any(
+		bool(value) for value in connected_customers["is_seed_customer"].tolist()
+	)
+	connected_customer_count = len(connected_customers.index)
+	if connected_customer_count == 1:
+		description = (
+			"This Emirates ID is linked to one confirmed mule customer in the selected "
+			"network."
+		)
+	else:
+		description = (
+			"This Emirates ID is shared by multiple customers. Every connected customer "
+			"is treated as a confirmed mule."
+		)
 	return NodeDetails(
-		record_type="Confirmed mule identity",
-		description=(
-			"Shared Emirates ID connecting confirmed mule customers in this network."
-		),
+		record_type="Emirates ID connection",
+		description=description,
 		facts=(
-			NodeDetailItem("Classification", "Confirmed mule identity"),
-			NodeDetailItem("Connected customers", _count(len(connected_customers.index))),
-			NodeDetailItem("Network layer", _count(node.node_layer)),
 			NodeDetailItem(
-				"Customer summaries",
-				"Select either connected customer to view its profile, activity, "
-				"and seed comparison.",
+				"Connected confirmed mule customers",
+				_count(connected_customer_count),
+			),
+			NodeDetailItem(
+				"Includes the seed mule",
+				"Yes" if includes_seed else "No",
+			),
+			NodeDetailItem(
+				"Analyst decision",
+				"Not required — connected customers remain confirmed mules",
 			),
 		),
 		indicators=(),
 		metric_family=None,
+		connected_customers=tuple(customer_summaries),
 	)
 
 
@@ -496,5 +580,5 @@ def build_node_details(
 			incident,
 		)
 	if node.node_type == GraphNodeType.EID:
-		return _identity_details(package, network_id, node, incident)
+		return _identity_details(package, network_id, incident)
 	raise NodeDetailsError(f"Unsupported node type: {node.node_type.value}")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from mule_network_ai_review.ai import ReviewDecision
@@ -49,16 +50,27 @@ def _progress_status(node: ReviewNodeState) -> tuple[str, str]:
 	if node.status == ReviewNodeStatus.SEED_KEEP:
 		return "Confirmed mule — starting point", "◆"
 	if node.status == ReviewNodeStatus.IDENTITY_KEEP:
-		return "Confirmed mule — shared Emirates ID", "◆"
+		return (
+			("Confirmed mule — shared Emirates ID", "◆")
+			if node.node_type == GraphNodeType.CUSTOMER
+			else ("Emirates ID — connected customers are confirmed mules", "◆")
+		)
 	return "Not yet reached", "–"
 
 
-def build_review_progress(snapshot: NetworkReviewSnapshot) -> tuple[ReviewProgressItem, ...]:
+def build_review_progress(
+	snapshot: NetworkReviewSnapshot,
+	visible_node_ids: Collection[str] | None = None,
+) -> tuple[ReviewProgressItem, ...]:
 	items = []
-	display_labels = build_node_display_labels(snapshot.nodes)
-	for node in snapshot.nodes:
-		if not node.reached:
-			continue
+	visible_ids = set(visible_node_ids) if visible_node_ids is not None else None
+	visible_nodes = [
+		node
+		for node in snapshot.nodes
+		if node.reached and (visible_ids is None or node.node_id in visible_ids)
+	]
+	display_labels = build_node_display_labels(visible_nodes)
+	for node in visible_nodes:
 		status_label, icon = _progress_status(node)
 		items.append(
 			ReviewProgressItem(

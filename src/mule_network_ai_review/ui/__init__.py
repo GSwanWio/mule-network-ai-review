@@ -1,5 +1,6 @@
 from mule_network_ai_review.ui.graph_view import (
 	InteractiveReviewGraph,
+	analyst_visible_node_ids,
 	build_interactive_review_graph,
 	selected_node_id_from_event,
 )
@@ -10,6 +11,7 @@ from mule_network_ai_review.ui.language import (
 	node_type_label,
 )
 from mule_network_ai_review.ui.node_details import (
+	ConnectedCustomerSummary,
 	NodeDetailItem,
 	NodeDetails,
 	NodeDetailsError,
@@ -35,6 +37,7 @@ __all__ = [
 	"AIDiscoveryRunResult",
 	"AIDiscoveryStopReason",
 	"AnalystReviewWorkspace",
+	"ConnectedCustomerSummary",
 	"InteractiveReviewGraph",
 	"NodeDetailItem",
 	"NodeDetails",
@@ -42,6 +45,7 @@ __all__ = [
 	"NodeMetricComparison",
 	"ReviewProgressItem",
 	"ReviewWorkspaceError",
+	"analyst_visible_node_ids",
 	"build_interactive_review_graph",
 	"build_node_display_labels",
 	"build_node_details",

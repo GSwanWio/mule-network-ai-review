@@ -53,9 +53,11 @@ node assessments, and the protected canonical ledger already established by the 
   and clearly label the comparison as context rather than proof. Counterparty overviews include
   exactly one authoritative payment rail, connection context, recent activity, mule exposure,
   linked-customer counts, and recency.
-- The Emirates ID connector has no customer metrics of its own. Its overview explains this and
-  directs the analyst to either connected confirmed-mule customer, where the full customer summary
-  and seed comparison are available.
+- Every Emirates ID connection remains visible in the analyst graph and is shown in red. Selecting
+  it displays every connected confirmed-mule customer's profile and activity summary in the same
+  panel, including when the only connected customer is the seed. Each non-seed customer also shows
+  its selected comparison with the confirmed seed mule. The Emirates ID itself is described as the
+  connection, not as a customer record requiring a decision.
 - A counterparty overview must never combine local and international metric families. The same
   authoritative rail policy used for the AI request controls the analyst view.
 - Backend terms including traversal, convergence, deterministic expansion, graph depth, prune,
@@ -94,8 +96,10 @@ The graph is generated locally without external network or visualization service
 click selection, hover detail, pan, and zoom. Confirmed mules and records that appear suspicious
 are red, records that appear legitimate are green, and records waiting for analyst review are
 outlined in amber. Shared Emirates ID paths are red because they identify confirmed mule customers,
-not neutral connections. Only the seed and selected node carry persistent labels so dense networks
-remain readable. The resulting graph contains reached nodes and legitimate boundary nodes only.
+not neutral connections. Emirates IDs connected to only one customer remain visible so the analyst
+can inspect the complete identity path. Only the seed and selected node carry persistent labels so
+dense networks remain readable. The resulting graph contains reached nodes and legitimate boundary
+nodes only.
 Downstream nodes blocked by a legitimate decision remain counted for audit but are intentionally
 hidden from the rendered result. Large reached networks use an explicitly labelled review-focused
 view.

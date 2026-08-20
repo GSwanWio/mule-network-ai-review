@@ -46,9 +46,14 @@ def _node_priority(node: ReviewNodeState) -> tuple[int, int, str]:
 def _selected_node_ids(
 	snapshot: NetworkReviewSnapshot,
 	max_nodes: int,
+	visible_node_ids: frozenset[str],
 ) -> set[str]:
 	ordered = sorted(
-		(node for node in snapshot.nodes if node.reached),
+		(
+			node
+			for node in snapshot.nodes
+			if node.reached and node.node_id in visible_node_ids
+		),
 		key=_node_priority,
 	)
 	selected = {snapshot.seed_node_id}
@@ -57,6 +62,14 @@ def _selected_node_ids(
 			break
 		selected.add(node.node_id)
 	return selected
+
+
+def analyst_visible_node_ids(
+	engine: BreadthFirstReviewEngine,
+	snapshot: NetworkReviewSnapshot | None = None,
+) -> frozenset[str]:
+	resolved_snapshot = snapshot or engine.snapshot()
+	return frozenset(node.node_id for node in resolved_snapshot.nodes if node.reached)
 
 
 def _node_colour(node: ReviewNodeState) -> str:
@@ -80,9 +93,14 @@ def _node_colour(node: ReviewNodeState) -> str:
 def _outcome_label(node: ReviewNodeState) -> str:
 	if node.status == ReviewNodeStatus.AWAITING_ANALYST:
 		return f"{decision_label(node.ai_decision)} — waiting for your review"
+	if node.status == ReviewNodeStatus.IDENTITY_KEEP:
+		return (
+			"Confirmed mule — shared Emirates ID"
+			if node.node_type == GraphNodeType.CUSTOMER
+			else "Emirates ID connected to confirmed mule customers"
+		)
 	return {
 		ReviewNodeStatus.SEED_KEEP: "Confirmed mule — starting point",
-		ReviewNodeStatus.IDENTITY_KEEP: "Confirmed mule — shared Emirates ID",
 		ReviewNodeStatus.AWAITING_AI: "Assessment in progress",
 		ReviewNodeStatus.CONFIRMED_KEEP: "Reviewed — needs further investigation",
 		ReviewNodeStatus.CONFIRMED_PRUNE: "Reviewed — no further investigation",
@@ -146,12 +164,19 @@ def build_interactive_review_graph(
 	if max_nodes < 2:
 		raise ValueError("max_nodes must be at least 2.")
 	states = {node.node_id: node for node in resolved_snapshot.nodes}
-	selected_ids = _selected_node_ids(resolved_snapshot, max_nodes)
+	visible_node_ids = analyst_visible_node_ids(engine, resolved_snapshot)
+	selected_ids = _selected_node_ids(
+		resolved_snapshot,
+		max_nodes,
+		visible_node_ids,
+	)
 	selected_states = sorted(
 		(states[node_id] for node_id in selected_ids),
 		key=lambda node: (node.graph_depth, node.node_type.value, node.node_token),
 	)
-	display_labels = build_node_display_labels(resolved_snapshot.nodes)
+	display_labels = build_node_display_labels(
+		states[node_id] for node_id in visible_node_ids
+	)
 	positions = _node_positions(selected_states)
 	active_ids = set(resolved_snapshot.active_relationship_ids)
 	pending_ids = set(resolved_snapshot.pending_relationship_ids)
@@ -278,8 +303,8 @@ def build_interactive_review_graph(
 		figure=figure,
 		node_ids=tuple(node.node_id for node in selected_states),
 		shown_node_count=len(selected_ids),
-		total_node_count=resolved_snapshot.reached_node_count,
-		truncated=len(selected_ids) < resolved_snapshot.reached_node_count,
+		total_node_count=len(visible_node_ids),
+		truncated=len(selected_ids) < len(visible_node_ids),
 	)
 
 

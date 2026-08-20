@@ -44,6 +44,9 @@ not infer branch direction from an undirected shortest path.
 - An Emirates ID path reached from a confirmed mule expands deterministically.
 - Every customer sharing that Emirates ID is classified as a confirmed mule, remains in the
   network, and expands deterministically without AI or analyst review.
+- The analyst surface keeps every reached Emirates ID connection visible and red, including when
+  it links only to the seed. Selecting it displays a protected summary for every connected
+  confirmed-mule customer.
 - Customers reached only through counterparties and all counterparties require AI review.
 - Before a counterparty connection is assessed, every customer already present immediately beyond
   that counterparty in the deterministic graph is assessed independently. This is a bounded

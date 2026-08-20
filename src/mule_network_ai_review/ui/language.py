@@ -34,7 +34,7 @@ def decision_explanation(decision: ReviewDecision | str) -> str:
 def node_type_label(node_type: GraphNodeType) -> str:
 	return {
 		GraphNodeType.CUSTOMER: "Customer",
-		GraphNodeType.EID: "Shared identity",
+		GraphNodeType.EID: "Emirates ID connection",
 		GraphNodeType.COUNTERPARTY: "Counterparty",
 	}[node_type]
 
@@ -61,7 +61,7 @@ def build_node_display_labels(
 			identity_label = (
 				"Confirmed mule customer"
 				if node.node_type == GraphNodeType.CUSTOMER
-				else "Confirmed mule identity"
+				else "Emirates ID connection"
 			)
 			labels[node.node_id] = (
 				f"{identity_label} {counters[node.node_type]}"
