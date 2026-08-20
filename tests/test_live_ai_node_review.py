@@ -6,10 +6,12 @@ from mule_network_ai_review.ai import (
 	AIClientSettings,
 	OpenAIReviewClient,
 	ReviewDecision,
-	build_node_review_request,
-	select_review_candidate,
 )
 from mule_network_ai_review.ingestion import load_workbook_package
+from mule_network_ai_review.review import (
+	BreadthFirstReviewEngine,
+	select_default_review_network,
+)
 
 
 @pytest.mark.live_ai
@@ -23,8 +25,9 @@ def test_one_bounded_live_openai_node_decision() -> None:
 		pytest.skip("OPENAI_API_KEY is not configured.")
 
 	package = load_workbook_package(workbook_path)
-	network_id, subject_token = select_review_candidate(package)
-	request = build_node_review_request(package, network_id, subject_token)
+	network_id = select_default_review_network(package)
+	request = BreadthFirstReviewEngine(package, network_id).next_ai_requests(max_calls=1)[0]
+	subject_token = request.subject.subject_token
 	record = OpenAIReviewClient(AIClientSettings.from_environment()).review_node(request)
 
 	assert record.network_id == network_id

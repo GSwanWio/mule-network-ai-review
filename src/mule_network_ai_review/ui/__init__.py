@@ -13,6 +13,7 @@ from mule_network_ai_review.ui.node_details import (
 	NodeDetailItem,
 	NodeDetails,
 	NodeDetailsError,
+	NodeMetricComparison,
 	build_node_details,
 )
 from mule_network_ai_review.ui.review_progress import (
@@ -38,6 +39,7 @@ __all__ = [
 	"NodeDetailItem",
 	"NodeDetails",
 	"NodeDetailsError",
+	"NodeMetricComparison",
 	"ReviewProgressItem",
 	"ReviewWorkspaceError",
 	"build_interactive_review_graph",

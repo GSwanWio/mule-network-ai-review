@@ -11,14 +11,17 @@ node assessments, and the protected canonical ledger already established by the 
 1. The analyst chooses the approved network-review file.
 2. The application validates the complete workbook contract before displaying any network.
 3. The analyst uses an explicitly labelled network selector and starts the assessment.
-4. AI assesses reached nodes breadth-first, expands suspicious branches, and prunes legitimate
-   branches without waiting for analyst input between nodes.
+4. At each breadth, AI assesses available linked customers before assessing the counterparty
+   connections through which they were found. It follows connections needing investigation and
+   stops connections that do not, without waiting for analyst input between records.
 5. The run stops at convergence or at its explicit API-call safety limit. A limited run can be
    continued without repeating canonical decisions.
 6. After convergence, the application displays the resulting graph and every AI decision.
 7. The analyst selects a reached node directly from the graph or review-progress panel.
 8. The interface displays a compact record overview using the selected customer profile or the
-   authoritative payment-rail-specific counterparty metrics.
+   authoritative payment-rail-specific counterparty metrics. Every non-seed customer overview,
+   including a confirmed mule found through a shared Emirates ID, shows selected comparisons with
+   the confirmed seed mule.
 9. The analyst reviews why each recommendation was made, what supports it, what lowers concern,
    and what information limitations remain.
 10. The analyst chooses either `Needs further investigation` or
@@ -46,8 +49,13 @@ node assessments, and the protected canonical ledger already established by the 
   records requiring an AI or analyst decision.
 - Selecting a node displays a protected record overview before the recommendation. Customer
   overviews include available profile, segment, account status, risk rating, tenure, and recent
-  activity. Counterparty overviews include exactly one authoritative payment rail, connection
-  context, recent activity, mule exposure, linked-customer counts, and recency.
+  activity. Non-seed customer overviews also show selected values beside the confirmed seed values
+  and clearly label the comparison as context rather than proof. Counterparty overviews include
+  exactly one authoritative payment rail, connection context, recent activity, mule exposure,
+  linked-customer counts, and recency.
+- The Emirates ID connector has no customer metrics of its own. Its overview explains this and
+  directs the analyst to either connected confirmed-mule customer, where the full customer summary
+  and seed comparison are available.
 - A counterparty overview must never combine local and international metric families. The same
   authoritative rail policy used for the AI request controls the analyst view.
 - Backend terms including traversal, convergence, deterministic expansion, graph depth, prune,

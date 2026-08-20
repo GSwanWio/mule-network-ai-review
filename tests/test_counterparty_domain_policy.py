@@ -1,13 +1,16 @@
 import pytest
 
 from mule_network_ai_review.ai import (
+	CounterpartyBranchContext,
 	CounterpartyDomainError,
 	CounterpartyRail,
+	LinkedCustomerAssessment,
 	NodeReviewDecision,
 	ReviewConfidence,
 	ReviewDecision,
 	SubjectType,
 	resolve_counterparty_domain,
+	validate_counterparty_branch_decision,
 	validate_counterparty_decision_language,
 )
 
@@ -80,4 +83,43 @@ def test_decision_cannot_introduce_a_different_payment_rail() -> None:
 		validate_counterparty_decision_language(
 			domain,
 			_decision("International activity supports further investigation."),
+		)
+
+
+def test_counterparty_decision_cannot_use_customer_only_behaviour() -> None:
+	domain = resolve_counterparty_domain(["Local outward payment"], "IBAN")
+
+	with pytest.raises(CounterpartyDomainError, match="Wio customer"):
+		validate_counterparty_decision_language(
+			domain,
+			_decision("Pass-through behaviour supports further investigation."),
+		)
+
+
+def test_suspicious_linked_customer_keeps_counterparty_connection_open() -> None:
+	context = CounterpartyBranchContext(
+		direct_linked_customer_count=1,
+		assessed_linked_customer_count=1,
+		confirmed_mule_customer_count=0,
+		needs_investigation_customer_count=1,
+		no_further_investigation_customer_count=0,
+		assessment_complete=True,
+		linked_customer_assessments=[
+			LinkedCustomerAssessment(
+				customer_token="CUS_test",
+				confirmed_mule=False,
+				ai_decision=ReviewDecision.SUSPICIOUS_KEEP,
+				ai_confidence=ReviewConfidence.HIGH,
+			)
+		],
+		guidance=["Customer outcomes are branch evidence."],
+	)
+	decision = _decision("No further investigation is supported.").model_copy(
+		update={"decision": ReviewDecision.LEGITIMATE_PRUNE}
+	)
+
+	with pytest.raises(CounterpartyDomainError, match="confirmed mule or a customer"):
+		validate_counterparty_branch_decision(
+			context,
+			NodeReviewDecision.model_validate(decision.model_dump()),
 		)

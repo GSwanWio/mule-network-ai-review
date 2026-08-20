@@ -81,6 +81,30 @@ def test_live_workspace_prepares_review_without_writing_a_ledger(tmp_path) -> No
 		display_labels[node.node_id].startswith("Confirmed mule")
 		for node in identity_nodes
 	)
+	identity_customers = []
+	identity_customer_network_id = None
+	for candidate_network_id in package.sheet("network_summary")["network_id"].astype(str):
+		candidate_snapshot = workspace.snapshot(candidate_network_id)
+		identity_customers = [
+			node
+			for node in candidate_snapshot.nodes
+			if node.node_type == GraphNodeType.CUSTOMER
+			and node.status == ReviewNodeStatus.IDENTITY_KEEP
+		]
+		if identity_customers:
+			identity_customer_network_id = candidate_network_id
+			break
+	assert identity_customers
+	assert identity_customer_network_id is not None
+	for customer in identity_customers:
+		details = build_node_details(
+			package,
+			identity_customer_network_id,
+			customer,
+		)
+		assert details.record_type == "Confirmed mule customer"
+		assert details.indicators
+		assert details.comparisons
 
 
 def test_decisions_use_plain_analyst_language() -> None:

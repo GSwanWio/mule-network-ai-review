@@ -45,6 +45,19 @@ not infer branch direction from an undirected shortest path.
 - Every customer sharing that Emirates ID is classified as a confirmed mule, remains in the
   network, and expands deterministically without AI or analyst review.
 - Customers reached only through counterparties and all counterparties require AI review.
+- Before a counterparty connection is assessed, every customer already present immediately beyond
+  that counterparty in the deterministic graph is assessed independently. This is a bounded
+  one-step look-ahead; it does not rediscover or add records.
+- A customer request contains the customer's full protected risk-relevant metric row plus selected
+  numeric differences, ratios, and percentage-point differences against the confirmed seed. The
+  customer's own metrics remain primary evidence and the seed comparison is context only.
+- A customer request never receives the counterparty's risk outcome. This prevents circular
+  reasoning when that customer result is later used as evidence for the counterparty connection.
+- A counterparty request contains its authoritative rail-specific metrics and protected linked
+  customer outcomes only. It never receives linked-customer metric rows and never treats the
+  external counterparty as a Wio customer.
+- A confirmed mule or linked customer needing further investigation keeps the counterparty
+  connection open. This invariant is validated after the structured AI response.
 - AI `SUSPICIOUS_KEEP` provisionally expands the node during the autonomous run.
 - AI `LEGITIMATE_PRUNE` keeps the reviewed node visible and provisionally blocks its downstream
   branch.
@@ -53,9 +66,11 @@ not infer branch direction from an undirected shortest path.
   only the newly reachable branch for a continuation AI run.
 - A downstream node remains reachable when another expanding path reaches it.
 
-All unresolved nodes at the shallowest reached graph depth are processed before any deeper node.
-Nodes capable of opening additional branches are ordered first only within the same breadth-first
-depth. Each AI request receives one subject and its relevant metrics rather than the full graph.
+For the shallowest reached counterparty depth, available customer nodes immediately beyond those
+counterparties are processed before the counterparty connections themselves. Once those independent
+customer outcomes are recorded, counterparty connections at that breadth are assessed. The engine
+then continues to the next reachable breadth. Each AI request still receives exactly one subject;
+the full graph and other customers' metric rows are never sent.
 
 The branch-gate policy is binary. `SUSPICIOUS_KEEP` requires affirmative material risk evidence
 beyond mere membership in a mule-seeded network. `LEGITIMATE_PRUNE` stops the branch when material
@@ -76,6 +91,9 @@ metric families. It never supplies both. For an unresolved rail, it supplies nei
 the model not to infer a rail. The response is rejected if it introduces a rail that conflicts with
 the authoritative context. These stable invariants are deterministic policy controls rather than
 semantic retrieval because they must not vary with document similarity or model interpretation.
+Counterparty instructions also prohibit customer-only concepts including account balance, KYC or
+KYB profile, declared salary or turnover, customer segment, and pass-through behaviour. A response
+using those concepts is rejected rather than published.
 
 ## Live-call controls
 

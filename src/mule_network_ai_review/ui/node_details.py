@@ -7,7 +7,11 @@ from typing import Any
 
 import pandas as pd
 
-from mule_network_ai_review.ai import CounterpartyRail
+from mule_network_ai_review.ai import (
+	CounterpartyRail,
+	CustomerMetricComparison,
+	build_customer_seed_comparison,
+)
 from mule_network_ai_review.ai.domain_policy import (
 	CounterpartyDomainError,
 	resolve_counterparty_domain,
@@ -31,12 +35,31 @@ class NodeDetailItem:
 
 
 @dataclass(frozen=True)
+class NodeMetricComparison:
+	label: str
+	customer_value: str
+	seed_value: str
+	difference: str
+
+
+@dataclass(frozen=True)
 class NodeDetails:
 	record_type: str
 	description: str
 	facts: tuple[NodeDetailItem, ...]
 	indicators: tuple[NodeDetailItem, ...]
+	comparisons: tuple[NodeMetricComparison, ...] = ()
 	metric_family: str | None = None
+
+
+CUSTOMER_COMPARISON_PRESENTATION = {
+	"transaction_count_30d": ("Transactions · 30 days", "COUNT"),
+	"total_inflow_30d_aed": ("Money in · 30 days", "CURRENCY"),
+	"total_outflow_30d_aed": ("Money out · 30 days", "CURRENCY"),
+	"new_counterparty_count_30d": ("New counterparties · 30 days", "COUNT"),
+	"overall_peer_outlier_count": ("Peer outlier indicators", "COUNT"),
+	"flow_through_ratio_24h": ("24-hour flow-through", "PERCENTAGE"),
+}
 
 
 def _is_missing(value: Any) -> bool:
@@ -121,6 +144,65 @@ def _currency(value: Any) -> str:
 def _percentage(value: Any) -> str:
 	number = _number(value)
 	return "Not available" if number is None else f"{number:.0%}"
+
+
+def _comparison_value(value: float, display_type: str) -> str:
+	if display_type == "COUNT":
+		return f"{int(round(value)):,}"
+	if display_type == "CURRENCY":
+		return f"AED {value:,.0f}"
+	return f"{value:.0%}"
+
+
+def _comparison_difference(
+	comparison: CustomerMetricComparison,
+	display_type: str,
+) -> str:
+	if display_type == "PERCENTAGE":
+		percentage_points = comparison.percentage_point_difference
+		if percentage_points is None:
+			return "Percentage-point difference unavailable"
+		return f"{percentage_points:+.1f} percentage points vs seed"
+	absolute = comparison.absolute_difference
+	formatted_absolute = _comparison_value(abs(absolute), display_type)
+	direction = "higher" if absolute > 0 else "lower" if absolute < 0 else "the same"
+	if direction == "the same":
+		absolute_text = "Same as seed"
+	else:
+		absolute_text = f"{formatted_absolute} {direction} than seed"
+	if comparison.ratio_to_seed is None:
+		return f"{absolute_text} · ratio unavailable because seed is zero"
+	return f"{absolute_text} · {comparison.ratio_to_seed:.2f}× seed"
+
+
+def _customer_comparisons(
+	package: WorkbookPackage,
+	network_id: str,
+	customer_token: str,
+) -> tuple[NodeMetricComparison, ...]:
+	context = build_customer_seed_comparison(package, network_id, customer_token)
+	if context is None:
+		return ()
+	items = []
+	for metric_name, (label, display_type) in CUSTOMER_COMPARISON_PRESENTATION.items():
+		comparison = context.comparisons.get(metric_name)
+		if comparison is None:
+			continue
+		items.append(
+			NodeMetricComparison(
+				label=label,
+				customer_value=_comparison_value(
+					comparison.customer_value,
+					display_type,
+				),
+				seed_value=_comparison_value(
+					comparison.seed_value,
+					display_type,
+				),
+				difference=_comparison_difference(comparison, display_type),
+			)
+		)
+	return tuple(items)
 
 
 def _days(value: Any) -> str:
@@ -248,6 +330,11 @@ def _customer_details(
 		description=description,
 		facts=tuple(facts),
 		indicators=tuple(indicators),
+		comparisons=_customer_comparisons(
+			package,
+			network_id,
+			node.node_token,
+		),
 		metric_family="CUSTOMER",
 	)
 
@@ -380,6 +467,11 @@ def _identity_details(
 			NodeDetailItem("Classification", "Confirmed mule identity"),
 			NodeDetailItem("Connected customers", _count(len(connected_customers.index))),
 			NodeDetailItem("Network layer", _count(node.node_layer)),
+			NodeDetailItem(
+				"Customer summaries",
+				"Select either connected customer to view its profile, activity, "
+				"and seed comparison.",
+			),
 		),
 		indicators=(),
 		metric_family=None,

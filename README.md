@@ -19,7 +19,8 @@ A Databricks API adapter will replace manual workbook upload later without chang
 1. The analyst selects a protected Databricks workbook.
 2. The application validates every required sheet, column, identifier, relationship, and metric.
 3. The analyst selects a network and starts AI review manually.
-4. The application evaluates the network breadth-first and then progresses into retained branches.
+4. At each breadth, the application evaluates available linked customers before evaluating the
+   counterparty connections through which they were discovered.
 5. The AI assigns one final decision to each evaluated subject:
 	- `SUSPICIOUS_KEEP`
 	- `LEGITIMATE_PRUNE`
@@ -33,6 +34,11 @@ A Databricks API adapter will replace manual workbook upload later without chang
 ## Traversal Rules
 
 - Traversal is breadth-first before progressing deeper into retained branches.
+- A customer is assessed independently from its parent counterparty using its full protected
+  customer metrics and selected comparisons with the confirmed seed mule.
+- A counterparty is assessed as an external payment connection using one authoritative rail metric
+  family and the protected outcomes of linked-customer assessments. It is never assessed as if it
+  were a Wio customer.
 - Only frontier subjects required for the next decision are sent to the AI.
 - The full network is not sent to the AI in one request.
 - Deterministic Databricks guardrail stops remain visible as evidence.

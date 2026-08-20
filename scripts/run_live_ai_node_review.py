@@ -5,9 +5,12 @@ from mule_network_ai_review.ai import (
 	AIClientSettings,
 	OpenAIReviewClient,
 	build_node_review_request,
-	select_review_candidate,
 )
 from mule_network_ai_review.ingestion import load_workbook_package
+from mule_network_ai_review.review import (
+	BreadthFirstReviewEngine,
+	select_default_review_network,
+)
 
 
 def _argument_parser() -> argparse.ArgumentParser:
@@ -32,13 +35,19 @@ def main() -> int:
 	package = load_workbook_package(arguments.workbook_path)
 	if arguments.subject_token:
 		network_id = arguments.network_id
-		subject_token = arguments.subject_token
-	else:
-		network_id, subject_token = select_review_candidate(
+		request = build_node_review_request(
 			package,
-			network_id=arguments.network_id,
+			network_id,
+			arguments.subject_token,
 		)
-	request = build_node_review_request(package, network_id, subject_token)
+	else:
+		network_id = arguments.network_id or select_default_review_network(package)
+		requests = BreadthFirstReviewEngine(package, network_id).next_ai_requests(
+			max_calls=1
+		)
+		if not requests:
+			raise RuntimeError("The selected network has no unresolved AI subject.")
+		request = requests[0]
 	settings = AIClientSettings.from_environment()
 
 	print(
@@ -61,6 +70,16 @@ def main() -> int:
 					else None
 				),
 				"customer_metric_count": len(request.customer_metrics or {}),
+				"seed_comparison_metric_count": len(
+					request.customer_seed_comparison.comparisons
+					if request.customer_seed_comparison
+					else {}
+				),
+				"linked_customer_assessment_count": (
+					request.counterparty_branch_context.assessed_linked_customer_count
+					if request.counterparty_branch_context
+					else 0
+				),
 				"local_counterparty_metric_count": len(
 					request.counterparty_local_metrics or {}
 				),

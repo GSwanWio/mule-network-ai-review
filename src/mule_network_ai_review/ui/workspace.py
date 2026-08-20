@@ -202,6 +202,8 @@ class AnalystReviewWorkspace:
 		snapshot = self.snapshot(network_id)
 		entries = []
 		for node in snapshot.nodes:
+			if not node.requires_analyst_review:
+				continue
 			if node.node_type.value not in {
 				SubjectType.CUSTOMER.value,
 				SubjectType.COUNTERPARTY.value,
@@ -234,6 +236,7 @@ class AnalystReviewWorkspace:
 		network_tokens = {
 			(node.node_type.value, node.node_token)
 			for node in self.snapshot(network_id).nodes
+			if node.requires_analyst_review
 		}
 		return [
 			entry

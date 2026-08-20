@@ -24,7 +24,10 @@ def test_live_workbook_builds_protected_counterparty_review_payload() -> None:
 	assert request.subject.subject_type == SubjectType.COUNTERPARTY
 	assert request.subject.subject_token == subject_token
 	assert request.customer_metrics is None
+	assert request.customer_seed_comparison is None
 	assert request.counterparty_domain is not None
+	assert request.counterparty_branch_context is not None
+	assert request.counterparty_branch_context.assessed_linked_customer_count == 0
 	if request.counterparty_domain.rail == CounterpartyRail.LOCAL:
 		assert request.counterparty_local_metrics
 		assert request.counterparty_international_metrics is None

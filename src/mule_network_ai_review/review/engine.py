@@ -4,12 +4,15 @@ from collections import Counter
 
 from mule_network_ai_review.ai import (
 	AIReviewRecord,
+	CounterpartyBranchContext,
+	LinkedCustomerAssessment,
 	NodeReviewRequest,
 	OpenAIReviewClient,
 	ReviewDecision,
 	SubjectType,
 	build_node_review_request,
 )
+from mule_network_ai_review.ai.payloads import COUNTERPARTY_BRANCH_GUIDANCE
 from mule_network_ai_review.ingestion import WorkbookPackage
 from mule_network_ai_review.review.graph import NetworkGraphIndex
 from mule_network_ai_review.review.ledger import (
@@ -132,13 +135,19 @@ class BreadthFirstReviewEngine:
 
 	def next_ai_requests(self, max_calls: int = 1) -> list[NodeReviewRequest]:
 		self._validate_call_limit(max_calls)
-		states = list(self._node_states().values())
+		states_by_id = self._node_states()
+		states = list(states_by_id.values())
 		candidates = self._next_candidate_states(states, max_calls)
 		return [
 			build_node_review_request(
 				self.package,
 				self.graph.network_id,
 				state.node_token,
+				counterparty_branch_context=(
+					self._counterparty_branch_context(state, states_by_id)
+					if state.node_type == GraphNodeType.COUNTERPARTY
+					else None
+				),
 			)
 			for state in candidates
 		]
@@ -316,12 +325,40 @@ class BreadthFirstReviewEngine:
 		if not unresolved:
 			return []
 		minimum_depth = min(state.graph_depth for state in unresolved)
-		candidates = [
+		frontier = [
 			state
 			for state in unresolved
 			if state.graph_depth == minimum_depth
 			and state.status == ReviewNodeStatus.AWAITING_AI
 		]
+		states_by_id = {state.node_id: state for state in states}
+		customer_first_candidates: dict[str, ReviewNodeState] = {}
+		for state in frontier:
+			if state.node_type == GraphNodeType.CUSTOMER:
+				customer_first_candidates[state.node_id] = state
+				continue
+			if state.node_type != GraphNodeType.COUNTERPARTY:
+				continue
+			for child_node_id in state.forward_child_node_ids:
+				child = states_by_id[child_node_id]
+				if (
+					child.node_type == GraphNodeType.CUSTOMER
+					and child.requires_ai_review
+					and child.ai_decision is None
+				):
+					customer_first_candidates[child.node_id] = child
+		if customer_first_candidates:
+			candidates = list(customer_first_candidates.values())
+			candidates.sort(
+				key=lambda state: (
+					state.graph_depth,
+					-state.forward_child_count,
+					state.node_token,
+				)
+			)
+			return candidates[:max_calls]
+
+		candidates = frontier
 		candidates.sort(
 			key=lambda state: (
 				-state.forward_child_count,
@@ -330,6 +367,65 @@ class BreadthFirstReviewEngine:
 			)
 		)
 		return candidates[:max_calls]
+
+	def _counterparty_branch_context(
+		self,
+		counterparty: ReviewNodeState,
+		states_by_id: dict[str, ReviewNodeState],
+	) -> CounterpartyBranchContext:
+		if counterparty.node_type != GraphNodeType.COUNTERPARTY:
+			raise ReviewEngineError(
+				"Linked customer context can only be built for a counterparty."
+			)
+		linked_customers = [
+			states_by_id[node_id]
+			for node_id in counterparty.forward_child_node_ids
+			if states_by_id[node_id].node_type == GraphNodeType.CUSTOMER
+		]
+		assessments: list[LinkedCustomerAssessment] = []
+		for customer in sorted(linked_customers, key=lambda item: item.node_token):
+			if customer.is_seed_customer or customer.deterministic_identity_keep:
+				assessments.append(
+					LinkedCustomerAssessment(
+						customer_token=customer.node_token,
+						confirmed_mule=True,
+						ai_decision=None,
+						ai_confidence=None,
+					)
+				)
+				continue
+			entry = self.ledger.get(SubjectType.CUSTOMER, customer.node_token)
+			if entry is None:
+				continue
+			assessments.append(
+				LinkedCustomerAssessment(
+					customer_token=customer.node_token,
+					confirmed_mule=False,
+					ai_decision=entry.ai_review.decision.decision,
+					ai_confidence=entry.ai_review.decision.confidence,
+				)
+			)
+		confirmed_mule_count = sum(item.confirmed_mule for item in assessments)
+		needs_investigation_count = sum(
+			item.ai_decision == ReviewDecision.SUSPICIOUS_KEEP
+			for item in assessments
+		)
+		no_further_investigation_count = sum(
+			item.ai_decision == ReviewDecision.LEGITIMATE_PRUNE
+			for item in assessments
+		)
+		return CounterpartyBranchContext(
+			direct_linked_customer_count=len(linked_customers),
+			assessed_linked_customer_count=len(assessments),
+			confirmed_mule_customer_count=confirmed_mule_count,
+			needs_investigation_customer_count=needs_investigation_count,
+			no_further_investigation_customer_count=(
+				no_further_investigation_count
+			),
+			assessment_complete=len(assessments) == len(linked_customers),
+			linked_customer_assessments=assessments,
+			guidance=list(COUNTERPARTY_BRANCH_GUIDANCE),
+		)
 
 	@staticmethod
 	def _validate_call_limit(max_calls: int) -> None:

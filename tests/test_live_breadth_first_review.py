@@ -7,6 +7,7 @@ from mule_network_ai_review.ingestion import load_workbook_package
 from mule_network_ai_review.review import (
 	BreadthFirstReviewEngine,
 	CanonicalDecisionLedger,
+	GraphNodeType,
 	ReviewNodeStatus,
 	select_default_review_network,
 )
@@ -40,6 +41,7 @@ def test_live_workbook_produces_protected_breadth_first_review_plan() -> None:
 	assert requests[0].subject.subject_type == SubjectType.COUNTERPARTY
 	assert requests[0].subject.subject_token.startswith("CP_")
 	assert requests[0].counterparty_domain is not None
+	assert requests[0].counterparty_branch_context is not None
 	if requests[0].counterparty_domain.rail == CounterpartyRail.LOCAL:
 		assert requests[0].counterparty_local_metrics
 		assert requests[0].counterparty_international_metrics is None
@@ -127,7 +129,7 @@ def test_live_relationships_follow_deterministic_discovery_direction() -> None:
 
 
 @pytest.mark.live_data
-def test_large_network_selects_only_the_shallowest_unresolved_depth() -> None:
+def test_large_network_assesses_linked_customers_before_counterparties() -> None:
 	package = _live_package()
 	summary = package.sheet("network_summary").copy()
 	summary["discovered_nodes"] = summary["discovered_nodes"].astype(int)
@@ -142,13 +144,39 @@ def test_large_network_selects_only_the_shallowest_unresolved_depth() -> None:
 	]
 
 	assert candidates
-	assert all(node.status == ReviewNodeStatus.AWAITING_AI for node in candidates)
+	assert all(node.node_type == GraphNodeType.CUSTOMER for node in candidates)
+	assert all(node.ai_decision is None for node in candidates)
+	assert all(not node.reached for node in candidates)
 	assert len({node.graph_depth for node in candidates}) == 1
 	minimum_unresolved_depth = min(
 		node.graph_depth
 		for node in snapshot.nodes
 		if node.reached and node.status == ReviewNodeStatus.AWAITING_AI
 	)
-	assert candidates[0].graph_depth == minimum_unresolved_depth
+	assert candidates[0].graph_depth == minimum_unresolved_depth + 1
+	states_by_id = {node.node_id: node for node in snapshot.nodes}
+	assert all(
+		all(
+			states_by_id[predecessor_id].node_type == GraphNodeType.COUNTERPARTY
+			and states_by_id[predecessor_id].status == ReviewNodeStatus.AWAITING_AI
+			for predecessor_id in candidate.predecessor_node_ids
+		)
+		for candidate in candidates
+	)
+	requests = engine.next_ai_requests(max_calls=10)
+	assert all(request.subject.subject_type == SubjectType.CUSTOMER for request in requests)
+	assert all(request.customer_metrics for request in requests)
+	assert all(request.customer_seed_comparison for request in requests)
+	assert all(request.counterparty_branch_context is None for request in requests)
+	for request in requests:
+		assert "customer_token" not in request.customer_metrics
+		comparison_context = request.customer_seed_comparison
+		assert comparison_context is not None
+		assert comparison_context.seed_customer_token == request.seed_customer_token
+		for comparison in comparison_context.comparisons.values():
+			assert comparison.absolute_difference == pytest.approx(
+				comparison.customer_value - comparison.seed_value,
+				abs=1e-5,
+			)
 	assert snapshot.pending_upstream_node_count > 0
 	assert snapshot.blocked_node_count == 0

@@ -12,7 +12,10 @@ from mule_network_ai_review.ai.domain_policy import (
 	resolve_counterparty_domain,
 )
 from mule_network_ai_review.ai.models import (
+	CounterpartyBranchContext,
 	CounterpartyRail,
+	CustomerMetricComparison,
+	CustomerSeedComparisonContext,
 	NodeReviewRequest,
 	ReviewSubject,
 	SubjectType,
@@ -63,6 +66,33 @@ NETWORK_CONTEXT_COLUMNS = (
 	"pruned_branch_count",
 	"termination_reason",
 )
+
+CUSTOMER_COMPARISON_METRICS = {
+	"transaction_count_30d": "ABSOLUTE",
+	"total_inflow_30d_aed": "ABSOLUTE",
+	"total_outflow_30d_aed": "ABSOLUTE",
+	"money_movement_to_average_balance_ratio_30d": "RATIO",
+	"new_counterparty_count_30d": "ABSOLUTE",
+	"overall_peer_outlier_count": "ABSOLUTE",
+	"flow_through_ratio_24h": "PERCENTAGE_POINT",
+	"same_day_in_out_value_ratio": "PERCENTAGE_POINT",
+	"round_amount_transaction_share_30d": "PERCENTAGE_POINT",
+	"days_since_last_meaningful_activity": "ABSOLUTE",
+}
+
+CUSTOMER_COMPARISON_GUIDANCE = [
+	"The reviewed customer's own metrics are the primary evidence.",
+	"Seed comparisons are context only and do not prove similarity, coordination, or risk.",
+	"A ratio is omitted when the confirmed seed value is zero.",
+	"Percentage-point differences are supplied only for bounded share or ratio metrics.",
+]
+
+COUNTERPARTY_BRANCH_GUIDANCE = [
+	"This context describes customers connected beyond the counterparty in the graph.",
+	"Customer outcomes are branch evidence, not attributes of the external counterparty.",
+	"Do not describe the counterparty as a Wio customer or assign customer-only behaviour to it.",
+	"A confirmed mule or customer needing investigation requires this connection to remain open.",
+]
 
 
 def _is_missing(value: Any) -> bool:
@@ -132,6 +162,114 @@ def _metric_map(row: pd.Series) -> dict[str, Any]:
 		if normalized is not None:
 			metrics[str(column)] = normalized
 	return metrics
+
+
+def _numeric_value(value: Any) -> float | None:
+	normalized = _normalize_value(value)
+	if normalized is None or isinstance(normalized, bool):
+		return None
+	try:
+		return float(normalized)
+	except (TypeError, ValueError):
+		return None
+
+
+def build_customer_seed_comparison(
+	package: WorkbookPackage,
+	network_id: str,
+	customer_token: str,
+) -> CustomerSeedComparisonContext | None:
+	metrics = package.sheet("customer_metrics")
+	network_metrics = metrics.loc[metrics["network_id"].astype(str) == network_id]
+	customer_row = _single_row(
+		network_metrics.loc[
+			network_metrics["customer_token"].astype(str) == customer_token
+		],
+		"customer metric",
+	)
+	seed_rows = network_metrics.loc[
+		pd.to_numeric(network_metrics["is_seed_customer"], errors="coerce")
+		.fillna(0)
+		.astype(int)
+		== 1
+	]
+	seed_row = _single_row(seed_rows, "confirmed seed customer metric")
+	seed_customer_token = _required_text(
+		seed_row["customer_token"],
+		"seed customer_token",
+	)
+	if customer_token == seed_customer_token:
+		return None
+
+	comparisons: dict[str, CustomerMetricComparison] = {}
+	for metric_name, comparison_mode in CUSTOMER_COMPARISON_METRICS.items():
+		customer_value = _numeric_value(customer_row.get(metric_name))
+		seed_value = _numeric_value(seed_row.get(metric_name))
+		if customer_value is None or seed_value is None:
+			continue
+		absolute_difference = customer_value - seed_value
+		ratio_to_seed = customer_value / seed_value if seed_value != 0 else None
+		percentage_point_difference = (
+			absolute_difference * 100
+			if comparison_mode == "PERCENTAGE_POINT"
+			else None
+		)
+		comparisons[metric_name] = CustomerMetricComparison(
+			metric_name=metric_name,
+			customer_value=round(customer_value, 6),
+			seed_value=round(seed_value, 6),
+			absolute_difference=round(absolute_difference, 6),
+			ratio_to_seed=(round(ratio_to_seed, 6) if ratio_to_seed is not None else None),
+			percentage_point_difference=(
+				round(percentage_point_difference, 4)
+				if percentage_point_difference is not None
+				else None
+			),
+		)
+	if not comparisons:
+		raise ReviewPayloadError(
+			"No comparable customer and confirmed-seed metrics are available."
+		)
+	return CustomerSeedComparisonContext(
+		seed_customer_token=seed_customer_token,
+		comparison_basis="CURRENT_CUSTOMER_VS_CONFIRMED_NETWORK_SEED",
+		comparisons=comparisons,
+		guidance=list(CUSTOMER_COMPARISON_GUIDANCE),
+	)
+
+
+def _default_counterparty_branch_context(
+	package: WorkbookPackage,
+	network_id: str,
+	node: pd.Series,
+) -> CounterpartyBranchContext:
+	nodes = package.sheet("nodes")
+	network_nodes = nodes.loc[nodes["network_id"].astype(str) == network_id]
+	relationships = package.sheet("relationships")
+	incident = relationships.loc[
+		(relationships["network_id"].astype(str) == network_id)
+		& (relationships["target_node_id"].astype(str) == str(node["node_id"]))
+	]
+	source_node_ids = set(incident["source_node_id"].astype(str))
+	linked_customers = network_nodes.loc[
+		(network_nodes["node_id"].astype(str).isin(source_node_ids))
+		& (network_nodes["node_type"].astype(str) == SubjectType.CUSTOMER.value)
+		& (
+			pd.to_numeric(network_nodes["node_layer"], errors="coerce")
+			== int(_normalize_value(node["node_layer"]) or 0)
+		)
+	]
+	direct_linked_customer_count = int(len(linked_customers.index))
+	return CounterpartyBranchContext(
+		direct_linked_customer_count=direct_linked_customer_count,
+		assessed_linked_customer_count=0,
+		confirmed_mule_customer_count=0,
+		needs_investigation_customer_count=0,
+		no_further_investigation_customer_count=0,
+		assessment_complete=direct_linked_customer_count == 0,
+		linked_customer_assessments=[],
+		guidance=list(COUNTERPARTY_BRANCH_GUIDANCE),
+	)
 
 
 def _subject_token_column(subject_type: SubjectType) -> str:
@@ -235,6 +373,7 @@ def build_node_review_request(
 	package: WorkbookPackage,
 	network_id: str,
 	subject_token: str,
+	counterparty_branch_context: CounterpartyBranchContext | None = None,
 ) -> NodeReviewRequest:
 	nodes = package.sheet("nodes")
 	token_match = (
@@ -282,6 +421,7 @@ def build_node_review_request(
 	}
 
 	customer_metrics = None
+	customer_seed_comparison = None
 	counterparty_domain = None
 	counterparty_local_metrics = None
 	counterparty_international_metrics = None
@@ -294,7 +434,18 @@ def build_node_review_request(
 			"customer metric",
 		)
 		customer_metrics = _metric_map(customer_row)
+		customer_seed_comparison = build_customer_seed_comparison(
+			package,
+			network_id,
+			resolved_subject_token,
+		)
 	else:
+		if counterparty_branch_context is None:
+			counterparty_branch_context = _default_counterparty_branch_context(
+				package,
+				network_id,
+				node,
+			)
 		try:
 			counterparty_domain = resolve_counterparty_domain(
 				relationship_descriptions=relationship_description_counts,
@@ -345,6 +496,8 @@ def build_node_review_request(
 		relationship_context=relationship_context,
 		counterparty_domain=counterparty_domain,
 		customer_metrics=customer_metrics,
+		customer_seed_comparison=customer_seed_comparison,
+		counterparty_branch_context=counterparty_branch_context,
 		counterparty_local_metrics=counterparty_local_metrics,
 		counterparty_international_metrics=counterparty_international_metrics,
 	)

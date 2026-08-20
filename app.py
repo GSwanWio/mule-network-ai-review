@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -113,6 +114,21 @@ def _render_node_details(details: NodeDetails) -> None:
 		if details.indicators:
 			st.markdown("**Key activity indicators**")
 			_render_detail_grid(details.indicators, metric=True)
+		if details.comparisons:
+			st.markdown("**Compared with the confirmed seed mule**")
+			st.caption(
+				"This comparison adds context only. The selected customer's own activity "
+				"remains the main evidence."
+			)
+			for offset in range(0, len(details.comparisons), 3):
+				row_items = details.comparisons[offset : offset + 3]
+				columns = st.columns(len(row_items))
+				for column, item in zip(columns, row_items, strict=True):
+					with column, st.container(border=True):
+						st.caption(item.label)
+						st.write(f"**Selected customer:** {item.customer_value}")
+						st.write(f"**Confirmed seed:** {item.seed_value}")
+						st.caption(item.difference)
 
 
 def _network_label(row, index: int, total: int) -> str:
@@ -127,6 +143,15 @@ def _graph_selection_callback(graph_key: str, selection_key: str) -> None:
 	selected_node_id = selected_node_id_from_event(st.session_state.get(graph_key))
 	if selected_node_id:
 		st.session_state[selection_key] = selected_node_id
+
+
+def _archive_existing_ledger(ledger_path: Path) -> Path:
+	timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+	archive_path = ledger_path.with_name(
+		f"{ledger_path.stem}.archived-{timestamp}{ledger_path.suffix}"
+	)
+	ledger_path.replace(archive_path)
+	return archive_path
 
 
 st.set_page_config(
@@ -225,7 +250,23 @@ ledger_path = Path(os.getenv("MULE_NETWORK_REVIEW_LEDGER_PATH", DEFAULT_LEDGER_P
 try:
 	workspace = AnalystReviewWorkspace(package=package, ledger_path=ledger_path)
 except ReviewWorkspaceError as error:
-	st.error(str(error))
+	st.warning(
+		"This review has saved recommendations from an earlier assessment method. "
+		"Start it again to use the current method. The earlier file will be archived."
+	)
+	if ledger_path.exists() and st.button(
+		"Start a fresh assessment",
+		type="primary",
+	):
+		try:
+			_archive_existing_ledger(ledger_path)
+			st.rerun()
+		except OSError as archive_error:
+			st.error("The earlier review could not be archived. Contact support.")
+			with st.expander("Support details"):
+				st.code(str(archive_error), language=None)
+	with st.expander("Support details"):
+		st.code(str(error), language=None)
 	st.stop()
 
 network_summary = package.sheet("network_summary").copy()

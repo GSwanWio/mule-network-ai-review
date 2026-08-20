@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from mule_network_ai_review.ai.domain_policy import (
 	CounterpartyDomainError,
+	validate_counterparty_branch_decision,
 	validate_counterparty_decision_language,
 )
 from mule_network_ai_review.ai.models import (
@@ -19,7 +20,7 @@ from mule_network_ai_review.ai.models import (
 	NodeReviewRequest,
 	SubjectType,
 )
-from mule_network_ai_review.ai.policy import AI_POLICY_VERSION, AI_SYSTEM_INSTRUCTIONS
+from mule_network_ai_review.ai.policy import AI_POLICY_VERSION, system_instructions_for
 
 
 class AIConfigurationError(ValueError):
@@ -96,7 +97,12 @@ class OpenAIReviewClient:
 			response = self._client.responses.parse(
 				model=self.settings.model,
 				input=[
-					{"role": "system", "content": AI_SYSTEM_INSTRUCTIONS},
+					{
+						"role": "system",
+						"content": system_instructions_for(
+							request.subject.subject_type
+						),
+					},
 					{"role": "user", "content": request_json},
 				],
 				text_format=NodeReviewDecision,
@@ -143,9 +149,15 @@ class OpenAIReviewClient:
 		if request.subject.subject_type == SubjectType.COUNTERPARTY:
 			if request.counterparty_domain is None:
 				raise AIReviewError("Counterparty domain context is missing from the request.")
+			if request.counterparty_branch_context is None:
+				raise AIReviewError("Counterparty branch context is missing from the request.")
 			try:
 				validate_counterparty_decision_language(
 					request.counterparty_domain,
+					decision,
+				)
+				validate_counterparty_branch_decision(
+					request.counterparty_branch_context,
 					decision,
 				)
 			except CounterpartyDomainError as error:

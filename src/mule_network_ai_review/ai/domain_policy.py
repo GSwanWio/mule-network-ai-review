@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from mule_network_ai_review.ai.models import (
+	CounterpartyBranchContext,
 	CounterpartyDomainContext,
 	CounterpartyRail,
 	NodeReviewDecision,
+	ReviewDecision,
 )
 
 
@@ -123,4 +125,38 @@ def validate_counterparty_decision_language(
 		raise CounterpartyDomainError(
 			"The AI decision conflicts with the authoritative counterparty rail: "
 			+ ", ".join(used_terms)
+		)
+	forbidden_customer_phrases = (
+		"pass-through",
+		"pass through",
+		"account balance",
+		"customer profile",
+		"customer segment",
+		"declared turnover",
+		"declared salary",
+		"kyc",
+		"kyb",
+	)
+	used_customer_phrases = sorted(
+		phrase for phrase in forbidden_customer_phrases if phrase in decision_text
+	)
+	if used_customer_phrases:
+		raise CounterpartyDomainError(
+			"The AI decision treats an external counterparty as a Wio customer: "
+			+ ", ".join(used_customer_phrases)
+		)
+
+
+def validate_counterparty_branch_decision(
+	context: CounterpartyBranchContext,
+	decision: NodeReviewDecision,
+) -> None:
+	requires_open_connection = (
+		context.confirmed_mule_customer_count > 0
+		or context.needs_investigation_customer_count > 0
+	)
+	if requires_open_connection and decision.decision != ReviewDecision.SUSPICIOUS_KEEP:
+		raise CounterpartyDomainError(
+			"The counterparty decision would close a connection containing a confirmed "
+			"mule or a customer that needs further investigation."
 		)
