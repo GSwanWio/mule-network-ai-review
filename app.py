@@ -21,8 +21,11 @@ from mule_network_ai_review.ui import (
 	MAX_AI_CALLS_PER_DISCOVERY_RUN,
 	AIDiscoveryStopReason,
 	AnalystReviewWorkspace,
+	NodeDetails,
+	NodeDetailsError,
 	ReviewWorkspaceError,
 	build_interactive_review_graph,
+	build_node_details,
 	build_node_display_labels,
 	build_review_progress,
 	decision_explanation,
@@ -86,6 +89,30 @@ def _render_ai_decision(entry) -> None:
 			ai_decision.data_quality_limitations,
 			"No information limitations were supplied.",
 		)
+
+
+def _render_detail_grid(items, metric: bool = False) -> None:
+	for offset in range(0, len(items), 4):
+		row_items = items[offset : offset + 4]
+		columns = st.columns(len(row_items))
+		for column, item in zip(columns, row_items, strict=True):
+			with column:
+				if metric:
+					st.metric(item.label, item.value)
+				else:
+					st.caption(item.label)
+					st.write(item.value)
+
+
+def _render_node_details(details: NodeDetails) -> None:
+	with st.container(border=True):
+		st.markdown("#### Record overview")
+		st.caption(details.record_type)
+		st.write(details.description)
+		_render_detail_grid(details.facts)
+		if details.indicators:
+			st.markdown("**Key activity indicators**")
+			_render_detail_grid(details.indicators, metric=True)
 
 
 def _network_label(row, index: int, total: int) -> str:
@@ -439,6 +466,18 @@ if snapshot.traversal_complete:
 	)
 	st.markdown(f"### {display_labels[selected_node.node_id]}")
 	st.caption(f"Reference: {selected_node.node_token}")
+	try:
+		_render_node_details(
+			build_node_details(
+				package=package,
+				network_id=selected_network_id,
+				node=selected_node,
+			)
+		)
+	except NodeDetailsError as error:
+		st.info("Additional information is unavailable for this record.")
+		with st.expander("Support details"):
+			st.code(str(error), language=None)
 
 	if selected_entry is None:
 		if selected_node.status == ReviewNodeStatus.SEED_KEEP:

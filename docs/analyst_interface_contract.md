@@ -17,11 +17,13 @@ node assessments, and the protected canonical ledger already established by the 
    continued without repeating canonical decisions.
 6. After convergence, the application displays the resulting graph and every AI decision.
 7. The analyst selects a reached node directly from the graph or review-progress panel.
-8. The analyst reviews why each recommendation was made, what supports it, what lowers concern,
+8. The interface displays a compact record overview using the selected customer profile or the
+   authoritative payment-rail-specific counterparty metrics.
+9. The analyst reviews why each recommendation was made, what supports it, what lowers concern,
    and what information limitations remain.
-9. The analyst chooses either `Needs further investigation` or
+10. The analyst chooses either `Needs further investigation` or
    `No further investigation needed` and supplies an audit rationale.
-10. An override that reopens a branch returns the network to AI traversal for only the newly
+11. An override that reopens a branch returns the network to AI traversal for only the newly
    reachable nodes. The updated graph is presented again after that continuation stops.
 
 ## Mandatory controls
@@ -42,6 +44,12 @@ node assessments, and the protected canonical ledger already established by the 
 - The confirmed seed and every customer reached through its shared Emirates ID are presented as
   confirmed mules. They remain in the network automatically and never appear as neutral identity
   records requiring an AI or analyst decision.
+- Selecting a node displays a protected record overview before the recommendation. Customer
+  overviews include available profile, segment, account status, risk rating, tenure, and recent
+  activity. Counterparty overviews include exactly one authoritative payment rail, connection
+  context, recent activity, mule exposure, linked-customer counts, and recency.
+- A counterparty overview must never combine local and international metric families. The same
+  authoritative rail policy used for the AI request controls the analyst view.
 - Backend terms including traversal, convergence, deterministic expansion, graph depth, prune,
   and branch gate are not shown in the normal analyst journey.
 - Internal decisions are translated consistently: `SUSPICIOUS_KEEP` is shown as
@@ -68,6 +76,9 @@ Only protected tokens from the validated workbook may be displayed or sent to Op
 workbook and canonical ledger remain sensitive and must stay in an approved environment. Raw
 customer identifiers, Emirates ID numbers, account numbers, counterparty names, and the
 re-identification mapping must never enter the repository, interface, ledger, or AI request.
+The protected workbook does not contain customer or counterparty names. The interface therefore
+uses protected record labels and never invents or infers a name. Any later internal name display
+requires a separately authorised lookup that remains outside the AI request and repository.
 
 ## Graph presentation
 

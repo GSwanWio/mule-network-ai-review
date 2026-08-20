@@ -9,6 +9,12 @@ from mule_network_ai_review.ui.language import (
 	decision_label,
 	node_type_label,
 )
+from mule_network_ai_review.ui.node_details import (
+	NodeDetailItem,
+	NodeDetails,
+	NodeDetailsError,
+	build_node_details,
+)
 from mule_network_ai_review.ui.review_progress import (
 	ReviewProgressItem,
 	build_review_progress,
@@ -29,10 +35,14 @@ __all__ = [
 	"AIDiscoveryStopReason",
 	"AnalystReviewWorkspace",
 	"InteractiveReviewGraph",
+	"NodeDetailItem",
+	"NodeDetails",
+	"NodeDetailsError",
 	"ReviewProgressItem",
 	"ReviewWorkspaceError",
 	"build_interactive_review_graph",
 	"build_node_display_labels",
+	"build_node_details",
 	"build_review_progress",
 	"decision_explanation",
 	"decision_label",
